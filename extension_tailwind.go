@@ -19,9 +19,15 @@ type Tailwind struct {
 	Timeout time.Duration
 }
 
-func (tailwind *Tailwind) Apply(funcs template.FuncMap) error {
+func (tailwind *Tailwind) Apply(funcs template.FuncMap) (err error) {
 	if tailwind.CSS == "" {
 		tailwind.CSS = fmt.Sprintf("%d.css", time.Now().UnixNano())
+	}
+	if !filepath.IsAbs(tailwind.CLI) {
+		tailwind.CLI, err = filepath.Abs(tailwind.CLI)
+		if err != nil {
+			return
+		}
 	}
 
 	funcs["tailwind"] = func() template.HTML {
@@ -68,6 +74,17 @@ func (tailwind *Tailwind) SideEffects(result *StaticPage) error {
 		}
 	}
 
+	if err := os.WriteFile(filepath.Join(dir, "tailwind.config.js"), []byte(fmt.Sprintf(`
+module.exports = {
+  content: ["./content/*"],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}`)), 0755); err != nil {
+		return err
+	}
+
 	inputCSS := filepath.Join(dir, "input.css")
 	if err := os.WriteFile(inputCSS, []byte(`@import "tailwindcss"; @tailwind base; @tailwind utilities;`), 0644); err != nil {
 		return err
@@ -75,7 +92,6 @@ func (tailwind *Tailwind) SideEffects(result *StaticPage) error {
 
 	outputCSS := filepath.Join(dir, "output.css")
 	args := append(strings.Fields(tailwind.CLI),
-		`--content`, contentDir+"/*",
 		"-i", inputCSS,
 		"-o", outputCSS,
 		"-m",
@@ -83,6 +99,8 @@ func (tailwind *Tailwind) SideEffects(result *StaticPage) error {
 	ctx, cancel := context.WithTimeout(alt(tailwind.Context, context.Background()), alt(tailwind.Timeout, time.Second*10))
 	defer cancel()
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	cmd.Dir = dir
+
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("err: %v (%s)", err, string(output))
 	}
