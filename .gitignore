@@ -1,0 +1,6 @@
+.idea/
+.vscode/
+dogfooding/
+testdata/
+tmp/
+.DS_Store
