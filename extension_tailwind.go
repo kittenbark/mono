@@ -2,6 +2,7 @@ package mono
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"html/template"
@@ -12,11 +13,15 @@ import (
 	"time"
 )
 
+//go:embed extension_tailwind.css
+var DefaultTailwindInputCSS string
+
 type Tailwind struct {
-	CLI     string
-	CSS     string
-	Context context.Context
-	Timeout time.Duration
+	CLI      string
+	CSS      string
+	InputCSS string
+	Context  context.Context
+	Timeout  time.Duration
 }
 
 func (tailwind *Tailwind) Apply(funcs template.FuncMap) (err error) {
@@ -42,6 +47,9 @@ func (tailwind *Tailwind) Apply(funcs template.FuncMap) (err error) {
 func (tailwind *Tailwind) SideEffects(result *StaticPage) error {
 	if tailwind.CLI == "" {
 		tailwind.CLI = "npx @tailwindcss/cli"
+	}
+	if tailwind.InputCSS == "" {
+		tailwind.InputCSS = DefaultTailwindInputCSS
 	}
 
 	if IsDev() {
@@ -86,7 +94,7 @@ module.exports = {
 	}
 
 	inputCSS := filepath.Join(dir, "input.css")
-	if err := os.WriteFile(inputCSS, []byte(`@import "tailwindcss"; @tailwind base; @tailwind utilities;`), 0644); err != nil {
+	if err := os.WriteFile(inputCSS, []byte(tailwind.InputCSS), 0644); err != nil {
 		return err
 	}
 
