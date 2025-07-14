@@ -46,7 +46,7 @@ func Nextjs(root string, extensions ...Extension) Static {
 	}
 
 	_, err := directoryFS(dir, map[string]func(filename string) (any, error){
-		"favicon.icon": func(filename string) (any, error) {
+		"favicon.ico": func(filename string) (any, error) {
 			data, err := fs.ReadFile(dir, filename)
 			if err != nil {
 				return nil, err

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"html/template"
+	"math"
 	"slices"
 	"strings"
 	"unicode"
@@ -14,11 +15,17 @@ var MarkdownTags = []MarkdownTag{
 		Triggers:        []string{"```go"},
 		OnNewline:       true,
 		TriggersClosing: []string{"\n```"},
-		Transformation:  template.Must(template.New("code_go").Funcs(map[string]any{"transform": func(data template.HTML) template.HTML { return data[5 : len(data)-3] }}).Parse(`<pre>{{transform .Children}}</pre>`)),
+		Transformation: template.Must(template.New("code_go").
+			Funcs(map[string]any{"transform": func(data template.HTML) template.HTML {
+				return template.HTML(strings.TrimSpace(string(data[5 : len(data)-3])))
+			}}).
+			Parse(`<pre class="bg-muted relative rounded px-[0.3rem] py-[0.2rem] font-mono"><code>{{transform .Children}}</code></pre>`),
+		),
 	},
 	&MarkdownGenericTag{
 		Triggers:  []string{"```"},
-		Insertion: []string{"<pre><code>", "</code></pre>"},
+		OnNewline: true,
+		Insertion: []string{`<pre><code class="bg-muted relative rounded px-[0.3rem] py-[0.2rem] font-mono">`, "</code></pre>"},
 	},
 	&MarkdownGenericTag{
 		Triggers:  []string{"`"},
@@ -74,11 +81,14 @@ var MarkdownTags = []MarkdownTag{
 	},
 }
 
+var MarkdownTagParagraph = []string{`<p class="leading-5 [&:not(:first-child)]:mt-6">`, `</p>`}
+
 type MarkdownTagAction struct {
 	Index          int
 	Insertion      string
 	Transformation *template.Template
 	SkipRange      []int
+	IsNewBlock     bool
 }
 
 type MarkdownTag interface {
@@ -137,19 +147,22 @@ func (tag *MarkdownGenericTag) Next(index int, rn rune) []MarkdownTagAction {
 			return []MarkdownTagAction{{
 				Transformation: tag.Transformation,
 				SkipRange:      []int{tag.openedIndex, index + 1},
+				IsNewBlock:     tag.OnNewline,
 			}}
 		}
 
 		return []MarkdownTagAction{
 			{
-				Index:     tag.openedIndex,
-				Insertion: tag.Insertion[0],
-				SkipRange: []int{tag.openedIndex, tag.openedIndex + len(tag.openedWith)},
+				Index:      tag.openedIndex,
+				Insertion:  tag.Insertion[0],
+				SkipRange:  []int{tag.openedIndex, tag.openedIndex + len(tag.openedWith)},
+				IsNewBlock: tag.OnNewline,
 			},
 			{
-				Index:     index,
-				Insertion: tag.Insertion[1],
-				SkipRange: []int{index + 1 - len(smallerWindow), index + 1},
+				Index:      index,
+				Insertion:  tag.Insertion[1],
+				SkipRange:  []int{index + 1 - len(smallerWindow), index + 1},
+				IsNewBlock: tag.OnNewline,
 			},
 		}
 	}
@@ -217,36 +230,12 @@ func (tag *MarkdownTagLink) Next(index int, rn rune) []MarkdownTagAction {
 func Markdown(data string) (template.HTML, error) {
 	actions := make([][]MarkdownTagAction, len(data))
 	skip := make([]bool, len(data))
-	for _, tag := range MarkdownTags {
-		for index, rn := range data {
-			if skip[index] {
-				continue
-			}
+	paragraphs := make([]bool, len(data))
 
-			for _, action := range tag.Next(index, rn) {
-				if len(action.SkipRange) > 1 {
-					for i := action.SkipRange[0]; i < action.SkipRange[1]; i++ {
-						skip[i] = true
-					}
-				}
-
-				if action.Transformation == nil {
-					actions[action.Index] = append(actions[action.Index], action)
-					continue
-				}
-
-				target := template.HTML(data[action.SkipRange[0]:action.SkipRange[1]])
-				transformed, err := ExecuteSchema(action.Transformation, struct{ Children template.HTML }{target})
-				if err != nil {
-					return "", err
-				}
-				actions[action.SkipRange[0]] = append(actions[action.Index], MarkdownTagAction{
-					Index:     action.SkipRange[0],
-					Insertion: string(transformed),
-				})
-			}
-		}
+	if err := markdownApplyTags(data, skip, actions, paragraphs); err != nil {
+		return "", err
 	}
+	markdownApplyParagraphs(actions, paragraphs, data)
 
 	result := []rune{}
 	for i, rn := range data {
@@ -260,4 +249,85 @@ func Markdown(data string) (template.HTML, error) {
 		}
 	}
 	return template.HTML(fmt.Sprintf("<div>%s</div>", string(result))), nil
+}
+
+func markdownApplyTags(data string, skip []bool, actions [][]MarkdownTagAction, paragraphs []bool) error {
+	for _, tag := range MarkdownTags {
+		for index, rn := range data {
+			if skip[index] {
+				continue
+			}
+
+			isNewlineBased := false
+			from, to := math.MaxInt, 0
+			for _, action := range tag.Next(index, rn) {
+				if len(action.SkipRange) > 1 {
+					for i := action.SkipRange[0]; i < action.SkipRange[1]; i++ {
+						skip[i] = true
+					}
+					from = min(from, action.SkipRange[0])
+					to = max(to, action.SkipRange[1])
+				}
+
+				if action.IsNewBlock {
+					isNewlineBased = true
+				}
+
+				if action.Transformation == nil {
+					actions[action.Index] = append(actions[action.Index], action)
+					continue
+				}
+
+				target := template.HTML(data[action.SkipRange[0]:action.SkipRange[1]])
+				transformed, err := ExecuteSchema(action.Transformation, struct{ Children template.HTML }{target})
+				if err != nil {
+					return err
+				}
+				actions[action.SkipRange[0]] = append(actions[action.Index], MarkdownTagAction{
+					Index:     action.SkipRange[0],
+					Insertion: string(transformed),
+				})
+			}
+			if isNewlineBased && from < to {
+				for i := from; i < to; i++ {
+					paragraphs[i] = true
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func markdownApplyParagraphs(actions [][]MarkdownTagAction, paragraphs []bool, data string) {
+	for from := 0; from < len(data); from++ {
+		if paragraphs[from] {
+			continue
+		}
+		var to int
+		for to = from + 1; to < len(data); to++ {
+			if paragraphs[to] || data[to-1:to+1] == "\n\n" {
+				break
+			}
+			paragraphs[to-1] = true
+		}
+		to -= 1
+
+		if strings.TrimSpace(data[from:to]) == "" {
+			from = to
+			continue
+		}
+
+		actions[from] = slices.Concat(
+			[]MarkdownTagAction{{
+				Index:     from,
+				Insertion: MarkdownTagParagraph[0],
+			}},
+			actions[from],
+		)
+		actions[to] = append(actions[to], MarkdownTagAction{
+			Index:     to,
+			Insertion: MarkdownTagParagraph[1],
+		})
+		from = to
+	}
 }
