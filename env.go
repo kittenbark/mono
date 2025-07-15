@@ -32,7 +32,7 @@ var (
 type Environment int64
 
 const (
-	EnvUnspecified Environment = iota
+	envUnspecified Environment = iota
 	EnvDev
 	EnvProd
 )

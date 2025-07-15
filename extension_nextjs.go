@@ -24,6 +24,7 @@ func Nextjs(root string, extensions ...Extension) Static {
 			return staticError(err)
 		}
 	}
+	funcs["ctx"] = func() template.FuncMap { return funcs }
 
 	result := StaticPage{
 		Subpattern: make(map[string]StaticPage),
@@ -100,14 +101,18 @@ func nextjsWalk(
 	dir fs.FS,
 	funcs template.FuncMap,
 ) fs.WalkDirFunc {
-	layout, layoutErr := dirLayout(dir, funcs)
 	return func(path string, d fs.DirEntry, err error) error {
 		dirname := filepath.Base(path)
-		if layoutErr != nil && err != nil || !d.IsDir() || strings.HasSuffix(dirname, ".") && dirname != "." {
-			return errors.Join(layoutErr, err)
+		if err != nil || !d.IsDir() || strings.HasSuffix(dirname, ".") && dirname != "." {
+			return err
 		}
 		funcs := maps.Clone(funcs)
 		funcs["rel"] = func(filename string) string { return filepath.Join(root, path, filename) }
+		funcs["ctx"] = func() template.FuncMap { return funcs }
+		layout, err := dirLayout(dir, funcs)
+		if err != nil {
+			return err
+		}
 
 		list, err := fs.ReadDir(dir, path)
 		if err != nil {

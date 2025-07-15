@@ -74,6 +74,23 @@ func (extension *extensionFile) Apply(funcs template.FuncMap) error {
 		}
 		return template.HTML(fmt.Sprintf(FiletypesTags[filetype], url, url)), nil
 	}
+
+	funcs["file_src"] = func(filename string) (template.URL, error) {
+		extension.mutex.Lock()
+		defer extension.mutex.Unlock()
+
+		_, err := os.Stat(filename)
+		if err != nil {
+			return "", err
+		}
+
+		url, cached := extension.url(filename)
+		if !cached {
+			extension.files = append(extension.files, filename)
+		}
+		return template.URL(url), nil
+	}
+
 	return nil
 }
 

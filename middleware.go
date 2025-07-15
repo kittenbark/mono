@@ -25,7 +25,7 @@ func SaneHeaders(handler HandlerFunc) HandlerFunc {
 			h.Set("Expires", "0")
 		} else {
 			// NOTE: this blocks <script src="https://cdn.tailwind.com"/>
-			h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'")
+			h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'")
 			h.Set("Cache-Control", "public, max-age=86400")
 			h.Set("Expires", time.Now().Add(24*time.Hour).Format(http.TimeFormat))
 		}

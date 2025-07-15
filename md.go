@@ -19,7 +19,7 @@ var MarkdownTags = []MarkdownTag{
 			Funcs(map[string]any{"transform": func(data template.HTML) template.HTML {
 				return template.HTML(strings.TrimSpace(string(data[5 : len(data)-3])))
 			}}).
-			Parse(`<pre class="bg-muted relative rounded px-[0.3rem] py-[0.2rem] font-mono"><code>{{transform .Children}}</code></pre>`),
+			Parse(`<div class="bg-muted relative rounded mt-5 first:mt-0"><pre class="font-mono text-sm p-[0.5rem]"><code>{{transform .Children}}</code></pre></div>`),
 		),
 	},
 	&MarkdownGenericTag{
@@ -63,7 +63,7 @@ var MarkdownTags = []MarkdownTag{
 		Triggers:        []string{"> "},
 		OnNewline:       true,
 		TriggersClosing: []string{"\n"},
-		Insertion:       []string{`<blockquote class="mt-6 border-l-2 pl-6 italic">`, "</blockquote>\n"},
+		Insertion:       []string{`<blockquote class="mt-5 border-l-2 pl-2 italic">`, "</blockquote>\n"},
 		Window:          []rune{'\n'},
 	},
 	&MarkdownTagLink{},
@@ -81,7 +81,7 @@ var MarkdownTags = []MarkdownTag{
 	},
 }
 
-var MarkdownTagParagraph = []string{`<p class="leading-5 [&:not(:first-child)]:mt-6">`, `</p>`}
+var MarkdownTagParagraph = []string{`<p class="leading-5 [&:not(:first-child)]:mt-5">`, `</p>`}
 
 type MarkdownTagAction struct {
 	Index          int

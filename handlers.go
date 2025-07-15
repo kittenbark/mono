@@ -128,7 +128,7 @@ func staticError(err error) Static {
 		}
 		trace = append(trace, fmt.Sprintf("%d. %s:%d", i+1, file, line))
 	}
-	slog.Error("mono: static error", "trace", trace, "err", err)
+	slog.Error("mono: static error", "err", err, "trace", trace)
 
 	return StaticFunc(func(ctx *Context) (StaticPage, error) {
 		return StaticPage{}, err

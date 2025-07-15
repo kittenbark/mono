@@ -36,10 +36,12 @@ func (tailwind *Tailwind) Apply(funcs template.FuncMap) (err error) {
 	}
 
 	funcs["tailwind"] = func() template.HTML {
+		result := template.HTML(fmt.Sprintf(`<link href="%s" rel="stylesheet">`, tailwind.urlCSS()))
 		if IsDev() {
-			return `<script src="https://cdn.tailwindcss.com"></script>`
+			return `<script src="https://cdn.tailwindcss.com"></script>
+	` + result
 		}
-		return template.HTML(fmt.Sprintf(`<link href="%s" rel="stylesheet">`, tailwind.urlCSS()))
+		return result
 	}
 	return nil
 }
@@ -53,6 +55,10 @@ func (tailwind *Tailwind) SideEffects(result *StaticPage) error {
 	}
 
 	if IsDev() {
+		result.Subpattern[tailwind.urlCSS()] = StaticPage{
+			ContentType: "text/css; charset=utf-8",
+			Data:        []byte(tailwind.InputCSS),
+		}
 		return nil
 	}
 
@@ -125,6 +131,9 @@ module.exports = {
 }
 
 func (tailwind *Tailwind) urlCSS() string {
+	if IsDev() {
+		return fmt.Sprintf("/mono/dev/tailwind/%s", tailwind.CSS)
+	}
 	return fmt.Sprintf("/mono/tailwind/%s", tailwind.CSS)
 }
 

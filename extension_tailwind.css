@@ -7,9 +7,25 @@
     --font-mono: var(--font-geist-mono);
 }
 
+@layer base {
+    code, pre, kbd, samp {
+        font-family: 'JetBrains Mono', monospace;
+    }
+}
+
+@layer utilities {
+    .font-mono {
+        font-family: 'JetBrains Mono', monospace;
+    }
+}
+
 html, body {
     width: 100%;
     overflow-x: hidden;
+}
+
+main {
+    font-family: 'Inter', sans-serif;
 }
 
 :root {
