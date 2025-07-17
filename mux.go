@@ -150,7 +150,7 @@ func (server *serverDev) Stats() Server {
 }
 
 func (server *serverDev) TLS(cfg *tls.Config, err error) Server {
-	if IsDev() {
+	if IsDev() || NoTLS {
 		slog.Info("dev build, skipping tls")
 		return server
 	}

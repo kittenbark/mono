@@ -12,10 +12,10 @@ var (
 	RpsLimiterDefaultQuota    atomic.Int64
 	DefaultTailwind           atomic.Pointer[Tailwind]
 	CurrentEnv                atomic.Pointer[Environment]
-	InMemoryFilesizeThreshold int64       = 1 << 20
-	LazyStatics               atomic.Bool // TODO: implement it :)
-	TempDir                   = ""        // default OS' temp dir
-	TempDirClean              = true
+	InMemoryFilesizeThreshold int64 = 1 << 20
+	TempDir                         = "" // default OS' temp dir
+	TempDirClean                    = true
+	NoTLS                           = false
 
 	Filetypes = map[string][]string{
 		"img":   {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".heic"},
@@ -58,10 +58,6 @@ func init() {
 		env = EnvProd
 	}
 	CurrentEnv.Store(&env)
-
-	if IsDev() {
-		LazyStatics.Store(true)
-	}
 
 	DefaultTailwind.Store(&Tailwind{
 		CLI: "tailwind",
