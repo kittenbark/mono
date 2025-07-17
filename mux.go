@@ -3,8 +3,11 @@ package mono
 import (
 	"cmp"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
+	"golang.org/x/crypto/acme/autocert"
+	"log"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -21,9 +24,12 @@ type Server interface {
 	Middleware(fn MiddlewareFunc) Server
 	Stats() Server
 	Addr(addr string) Server
+	TLS(cfg *tls.Config, err error) Server
 	Start() error
 	Stop()
 }
+
+var _ Server = (*serverDev)(nil)
 
 type HandlerFunc func(ctx context.Context, rw http.ResponseWriter, req *http.Request) error
 
@@ -39,6 +45,8 @@ type serverDev struct {
 	ctxCancel    func()
 	ctxTimeout   time.Duration
 	internal     http.Server
+	tls          *tls.Config
+	cert         *autocert.Manager
 	middleware   []MiddlewareFunc
 	buildError   error
 	buildStart   time.Time
@@ -107,25 +115,13 @@ func (server *serverDev) Static(pattern string, static Static) Server {
 		}
 		if strings.HasPrefix(data.ContentType, "text/css") {
 			h.Set("Cache-Control", "public, max-age=604800")
-			h.Set("Expires", time.Now().Add(7*time.Hour).Format(http.TimeFormat))
+			h.Set("Expires", time.Now().Add(7*24*time.Hour).Format(http.TimeFormat))
 		}
 		if _, err = rw.Write(data.Data); err != nil {
 			return err
 		}
 		return nil
 	})
-}
-
-var sizeofSuffix = []string{"b", "kb", "mb", "gb", "tb", "pb"}
-
-func sizeof(data []byte) string {
-	result := float64(len(data))
-	i := 0
-	for result > 1024 {
-		result /= 1024
-		i += 1
-	}
-	return fmt.Sprintf("%0.2f%s", result, sizeofSuffix[i])
 }
 
 func (server *serverDev) Addr(addr string) Server {
@@ -153,6 +149,23 @@ func (server *serverDev) Stats() Server {
 	return server
 }
 
+func (server *serverDev) TLS(cfg *tls.Config, err error) Server {
+	if IsDev() {
+		slog.Info("dev build, skipping tls")
+		return server
+	}
+
+	if err != nil {
+		data, ok := err.(*cursedTLSDataAsError)
+		if !ok {
+			return server.error(err)
+		}
+		server.cert = data.manager
+	}
+	server.tls = cfg
+	return server
+}
+
 func (server *serverDev) Start() error {
 	if server.buildError != nil {
 		return server.buildError
@@ -163,15 +176,34 @@ func (server *serverDev) Start() error {
 		mux.Handle(pattern, handler)
 	}
 	server.internal = http.Server{
-		Addr:    server.addr,
-		Handler: mux,
+		Addr:      server.addr,
+		Handler:   mux,
+		TLSConfig: server.tls,
+	}
+
+	if server.cert != nil {
+		server.addr = ":443"
+		go func() {
+			if err := http.ListenAndServe(":80", server.cert.HTTPHandler(nil)); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Fatalf("HTTP server error: %v", err)
+			}
+		}()
 	}
 
 	slog.Info(fmt.Sprintf(
-		"Built in %s. Starting server at http://localhost%s",
+		"Built in %s. Starting server at %s%s",
+		func() string {
+			if server.tls == nil {
+				return "http://localhost"
+			}
+			return "https://" + server.tls.ServerName
+		}(),
 		time.Since(server.buildStart).String(),
 		server.addr,
 	))
+	if server.tls != nil {
+		return server.internal.ListenAndServeTLS("", "")
+	}
 	return server.internal.ListenAndServe()
 }
 
@@ -201,6 +233,18 @@ func (server *serverDev) init() {
 	server.buildStart = time.Now()
 	server.handlersMap = make(map[string]string)
 	server.handlers = make(map[string]http.HandlerFunc)
+}
+
+var sizeofSuffix = []string{"b", "kb", "mb", "gb", "tb", "pb"}
+
+func sizeof(data []byte) string {
+	result := float64(len(data))
+	i := 0
+	for result > 1024 {
+		result /= 1024
+		i += 1
+	}
+	return fmt.Sprintf("%0.2f%s", result, sizeofSuffix[i])
 }
 
 func alt[T comparable](value T, otherwise T) T {
