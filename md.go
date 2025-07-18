@@ -11,21 +11,20 @@ import (
 )
 
 var MarkdownTags = []MarkdownTag{
-	&MarkdownGenericTag{
-		Triggers:        []string{"```go"},
-		OnNewline:       true,
-		TriggersClosing: []string{"\n```"},
-		Transformation: template.Must(template.New("code_go").
-			Funcs(map[string]any{"transform": func(data template.HTML) template.HTML {
-				return template.HTML(strings.TrimSpace(string(data[5 : len(data)-3])))
-			}}).
-			Parse(`<div class="bg-muted relative rounded mt-5 first:mt-0"><pre class="font-mono text-sm p-[0.5rem]"><code>{{transform .Children}}</code></pre></div>`),
-		),
-	},
-	&MarkdownGenericTag{
-		Triggers:  []string{"```"},
-		OnNewline: true,
-		Insertion: []string{`<pre><code class="bg-muted relative rounded px-[0.3rem] py-[0.2rem] font-mono">`, "</code></pre>"},
+	&MarkdownTagCode{
+		Transformations: map[string]*template.Template{
+			"default": template.Must(template.New("code").
+				Funcs(map[string]any{"transform": func(data template.HTML) template.HTML {
+					from, to := strings.Index(string(data), "\n"), strings.LastIndex(string(data), "\n")
+					if from == to {
+						return ""
+					}
+					println(from, to)
+					return data[from+1 : to]
+				}}).
+				Parse(`<div class="bg-muted relative rounded mt-5 first:mt-0"><pre class="font-mono text-sm p-[0.5rem]"><code>{{transform .Children}}</code></pre></div>`),
+			),
+		},
 	},
 	&MarkdownGenericTag{
 		Triggers:  []string{"`"},
@@ -87,7 +86,7 @@ type MarkdownTagAction struct {
 	Index          int
 	Insertion      string
 	Transformation *template.Template
-	SkipRange      []int
+	Range          []int
 	IsNewBlock     bool
 }
 
@@ -146,7 +145,7 @@ func (tag *MarkdownGenericTag) Next(index int, rn rune) []MarkdownTagAction {
 		if tag.Transformation != nil {
 			return []MarkdownTagAction{{
 				Transformation: tag.Transformation,
-				SkipRange:      []int{tag.openedIndex, index + 1},
+				Range:          []int{tag.openedIndex, index + 1},
 				IsNewBlock:     tag.OnNewline,
 			}}
 		}
@@ -155,18 +154,67 @@ func (tag *MarkdownGenericTag) Next(index int, rn rune) []MarkdownTagAction {
 			{
 				Index:      tag.openedIndex,
 				Insertion:  tag.Insertion[0],
-				SkipRange:  []int{tag.openedIndex, tag.openedIndex + len(tag.openedWith)},
+				Range:      []int{tag.openedIndex, tag.openedIndex + len(tag.openedWith)},
 				IsNewBlock: tag.OnNewline,
 			},
 			{
 				Index:      index,
 				Insertion:  tag.Insertion[1],
-				SkipRange:  []int{index + 1 - len(smallerWindow), index + 1},
+				Range:      []int{index + 1 - len(smallerWindow), index + 1},
 				IsNewBlock: tag.OnNewline,
 			},
 		}
 	}
 
+	return nil
+}
+
+type MarkdownTagCode struct {
+	Transformations map[string]*template.Template
+	state           string
+	window          []rune
+	hint            []rune
+	start           int
+}
+
+func (tag *MarkdownTagCode) Next(index int, rn rune) []MarkdownTagAction {
+	tag.window = append(tag.window, rn)
+	if len(tag.window) > 3 {
+		tag.window = tag.window[1:]
+	}
+	window := string(tag.window)
+	switch tag.state {
+	case "":
+		tag.state = "new"
+		fallthrough
+	case "new":
+		tag.hint = []rune{}
+		if window == "```" {
+			tag.state = "hint"
+			tag.start = index - 2
+		}
+	case "hint":
+		if rn == '\n' {
+			tag.state = "body"
+			return nil
+		}
+		tag.hint = append(tag.hint, rn)
+	case "body":
+		if window != "```" {
+			break
+		}
+		tag.state = "new"
+		transformation := tag.Transformations["default"]
+		if specific, ok := tag.Transformations[string(tag.hint)]; ok {
+			transformation = specific
+		}
+		return []MarkdownTagAction{{
+			Index:          tag.start,
+			Range:          []int{tag.start, index + 1},
+			Transformation: transformation,
+			IsNewBlock:     true,
+		}}
+	}
 	return nil
 }
 
@@ -203,7 +251,7 @@ func (tag *MarkdownTagLink) Next(index int, rn rune) []MarkdownTagAction {
 		return []MarkdownTagAction{{
 			Index:          tag.openIndex,
 			Transformation: tag.template,
-			SkipRange:      []int{tag.openIndex, index + 1},
+			Range:          []int{tag.openIndex, index + 1},
 		}}
 	case tag.openLink:
 
@@ -261,12 +309,12 @@ func markdownApplyTags(data string, skip []bool, actions [][]MarkdownTagAction, 
 			isNewlineBased := false
 			from, to := math.MaxInt, 0
 			for _, action := range tag.Next(index, rn) {
-				if len(action.SkipRange) > 1 {
-					for i := action.SkipRange[0]; i < action.SkipRange[1]; i++ {
+				if len(action.Range) > 1 {
+					for i := action.Range[0]; i < action.Range[1]; i++ {
 						skip[i] = true
 					}
-					from = min(from, action.SkipRange[0])
-					to = max(to, action.SkipRange[1])
+					from = min(from, action.Range[0])
+					to = max(to, action.Range[1])
 				}
 
 				if action.IsNewBlock {
@@ -278,13 +326,13 @@ func markdownApplyTags(data string, skip []bool, actions [][]MarkdownTagAction, 
 					continue
 				}
 
-				target := template.HTML(data[action.SkipRange[0]:action.SkipRange[1]])
+				target := template.HTML(data[action.Range[0]:action.Range[1]])
 				transformed, err := ExecuteSchema(action.Transformation, struct{ Children template.HTML }{target})
 				if err != nil {
 					return err
 				}
-				actions[action.SkipRange[0]] = append(actions[action.Index], MarkdownTagAction{
-					Index:     action.SkipRange[0],
+				actions[action.Range[0]] = append(actions[action.Index], MarkdownTagAction{
+					Index:     action.Range[0],
 					Insertion: string(transformed),
 				})
 			}

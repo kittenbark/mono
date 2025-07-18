@@ -192,13 +192,13 @@ func (server *serverDev) Start() error {
 
 	slog.Info(fmt.Sprintf(
 		"Built in %s. Starting server at %s%s",
+		time.Since(server.buildStart).String(),
 		func() string {
 			if server.tls == nil {
 				return "http://localhost"
 			}
 			return "https://" + server.tls.ServerName
 		}(),
-		time.Since(server.buildStart).String(),
 		server.addr,
 	))
 	if server.tls != nil {
