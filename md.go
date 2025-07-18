@@ -7,80 +7,111 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"sync"
 	"unicode"
 )
 
-var MarkdownTags = []MarkdownTag{
-	&MarkdownTagCode{
-		Transformations: map[string]*template.Template{
-			"default": template.Must(template.New("code").
-				Funcs(map[string]any{"transform": func(data template.HTML) template.HTML {
-					from, to := strings.Index(string(data), "\n"), strings.LastIndex(string(data), "\n")
-					if from == to {
-						return ""
-					}
-					println(from, to)
-					return data[from+1 : to]
-				}}).
-				Parse(`<div class="bg-muted relative rounded mt-5 first:mt-0"><pre class="font-mono text-sm p-[0.5rem]"><code>{{transform .Children}}</code></pre></div>`),
-			),
+var (
+	MarkdownTags = []MarkdownTag{
+		&MarkdownTagCode{
+			Transformations: map[string]*template.Template{
+				"default": template.Must(template.New("code").
+					Funcs(map[string]any{"transform": func(data template.HTML) template.HTML {
+						from, to := strings.Index(string(data), "\n"), strings.LastIndex(string(data), "\n")
+						if from == to {
+							return ""
+						}
+						return data[from+1 : to]
+					}}).
+					Parse(`<div class="bg-muted relative rounded mt-5 first:mt-0"><pre class="font-mono text-sm p-[0.5rem]"><code>{{transform .Children}}</code></pre></div>`),
+				),
+			},
 		},
-	},
-	&MarkdownGenericTag{
-		Triggers:  []string{"`"},
-		Insertion: []string{`<code class="bg-muted relative rounded px-[0.3rem] py-[0.2rem] font-mono text-sm font-semibold">`, "</code>"},
-	},
-	&MarkdownGenericTag{
-		Triggers:        []string{"#### "},
-		OnNewline:       true,
-		TriggersClosing: []string{"\n"},
-		Insertion:       []string{`<h4 class="scroll-m-20 text-xl font-semibold tracking-tight">`, "</h2>\n"},
-		Window:          []rune{'\n'},
-	},
-	&MarkdownGenericTag{
-		Triggers:        []string{"### "},
-		OnNewline:       true,
-		TriggersClosing: []string{"\n"},
-		Insertion:       []string{`<h3 class="scroll-m-20 text-2xl font-semibold tracking-tight">`, "</h2>\n"},
-		Window:          []rune{'\n'},
-	},
-	&MarkdownGenericTag{
-		Triggers:        []string{"## "},
-		OnNewline:       true,
-		TriggersClosing: []string{"\n"},
-		Insertion:       []string{`<h2 class="scroll-m-20 border-b pb-2 text-3xl font-semibold tracking-tight first:mt-0">`, "</h2>\n"},
-		Window:          []rune{'\n'},
-	},
-	&MarkdownGenericTag{
-		Triggers:        []string{"# "},
-		OnNewline:       true,
-		TriggersClosing: []string{"\n"},
-		Insertion:       []string{`<h1 class="scroll-m-20 text-center text-4xl font-extrabold tracking-tight text-balance">`, "</h1>\n"},
-		Window:          []rune{'\n'},
-	},
-	&MarkdownGenericTag{
-		Triggers:        []string{"> "},
-		OnNewline:       true,
-		TriggersClosing: []string{"\n"},
-		Insertion:       []string{`<blockquote class="mt-5 border-l-2 pl-2 italic">`, "</blockquote>\n"},
-		Window:          []rune{'\n'},
-	},
-	&MarkdownTagLink{},
-	&MarkdownGenericTag{
-		Triggers:  []string{"***", "___"},
-		Insertion: []string{"<b><i>", "</i></b>"},
-	},
-	&MarkdownGenericTag{
-		Triggers:  []string{"**", "__"},
-		Insertion: []string{"<b>", "</b>"},
-	},
-	&MarkdownGenericTag{
-		Triggers:  []string{"*", "_"},
-		Insertion: []string{"<i>", "</i>"},
-	},
-}
+		&MarkdownGenericTag{
+			Triggers:  []string{"`"},
+			Insertion: []string{`<code class="bg-muted relative rounded px-[0.3rem] py-[0.2rem] font-mono text-sm font-semibold">`, "</code>"},
+		},
+		&MarkdownGenericTag{
+			Triggers:        []string{"#### "},
+			OnNewline:       true,
+			TriggersClosing: []string{"\n"},
+			Insertion:       []string{`<h4 class="scroll-m-20 text-xl font-semibold tracking-tight">`, "</h2>\n"},
+			Window:          []rune{'\n'},
+		},
+		&MarkdownGenericTag{
+			Triggers:        []string{"### "},
+			OnNewline:       true,
+			TriggersClosing: []string{"\n"},
+			Insertion:       []string{`<h3 class="scroll-m-20 text-2xl font-semibold tracking-tight">`, "</h2>\n"},
+			Window:          []rune{'\n'},
+		},
+		&MarkdownGenericTag{
+			Triggers:        []string{"## "},
+			OnNewline:       true,
+			TriggersClosing: []string{"\n"},
+			Insertion:       []string{`<h2 class="scroll-m-20 border-b pb-2 text-3xl font-semibold tracking-tight first:mt-0">`, "</h2>\n"},
+			Window:          []rune{'\n'},
+		},
+		&MarkdownGenericTag{
+			Triggers:        []string{"# "},
+			OnNewline:       true,
+			TriggersClosing: []string{"\n"},
+			Insertion:       []string{`<h1 class="scroll-m-20 text-center text-4xl font-extrabold tracking-tight text-balance">`, "</h1>\n"},
+			Window:          []rune{'\n'},
+		},
+		&MarkdownGenericTag{
+			Triggers:        []string{"> "},
+			OnNewline:       true,
+			TriggersClosing: []string{"\n"},
+			Insertion:       []string{`<blockquote class="mt-5 border-l-2 pl-2 italic">`, "</blockquote>\n"},
+			Window:          []rune{'\n'},
+		},
+		&MarkdownTagLink{},
+		&MarkdownGenericTag{
+			Triggers:  []string{"***", "___"},
+			Insertion: []string{"<b><i>", "</i></b>"},
+		},
+		&MarkdownGenericTag{
+			Triggers:  []string{"**", "__"},
+			Insertion: []string{"<b>", "</b>"},
+		},
+		&MarkdownGenericTag{
+			Triggers:  []string{"*", "_"},
+			Insertion: []string{"<i>", "</i>"},
+		},
+	}
 
-var MarkdownTagParagraph = []string{`<p class="leading-5 [&:not(:first-child)]:mt-5">`, `</p>`}
+	MarkdownTagParagraph = []string{`<p class="leading-5 [&:not(:first-child)]:mt-5">`, `</p>`}
+
+	markdownLock = sync.Mutex{}
+)
+
+func Markdown(data string) (template.HTML, error) {
+	markdownLock.Lock()
+	defer markdownLock.Unlock()
+
+	actions := make([][]MarkdownTagAction, len(data))
+	skip := make([]bool, len(data))
+	paragraphs := make([]bool, len(data))
+
+	if err := markdownApplyTags(data, skip, actions, paragraphs); err != nil {
+		return "", err
+	}
+	markdownApplyParagraphs(actions, paragraphs, data)
+
+	result := []rune{}
+	for i, rn := range data {
+		slices.SortStableFunc(actions[i], func(a, b MarkdownTagAction) int { return -cmp.Compare(a.Index, b.Index) })
+		for _, action := range actions[i] {
+			result = append(result, []rune(action.Insertion)...)
+		}
+
+		if !skip[i] {
+			result = append(result, rn)
+		}
+	}
+	return template.HTML(fmt.Sprintf("<div>\n%s\n</div>", string(result))), nil
+}
 
 type MarkdownTagAction struct {
 	Index          int
@@ -273,30 +304,6 @@ func (tag *MarkdownTagLink) Next(index int, rn rune) []MarkdownTagAction {
 	}
 
 	return nil
-}
-
-func Markdown(data string) (template.HTML, error) {
-	actions := make([][]MarkdownTagAction, len(data))
-	skip := make([]bool, len(data))
-	paragraphs := make([]bool, len(data))
-
-	if err := markdownApplyTags(data, skip, actions, paragraphs); err != nil {
-		return "", err
-	}
-	markdownApplyParagraphs(actions, paragraphs, data)
-
-	result := []rune{}
-	for i, rn := range data {
-		slices.SortStableFunc(actions[i], func(a, b MarkdownTagAction) int { return -cmp.Compare(a.Index, b.Index) })
-		for _, action := range actions[i] {
-			result = append(result, []rune(action.Insertion)...)
-		}
-
-		if !skip[i] {
-			result = append(result, rn)
-		}
-	}
-	return template.HTML(fmt.Sprintf("<div>%s</div>", string(result))), nil
 }
 
 func markdownApplyTags(data string, skip []bool, actions [][]MarkdownTagAction, paragraphs []bool) error {
