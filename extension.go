@@ -107,7 +107,7 @@ func (extension *extensionFile) SideEffects(result *StaticPage) error {
 			return fmt.Errorf("%s is a directory, not a file", filename)
 		}
 		if stat.Size() > InMemoryFilesizeThreshold {
-			slog.Warn("file size too large (unsupported for now)")
+			Log.Warn("file size too large (unsupported for now)")
 		}
 
 		data, err := os.ReadFile(filename)

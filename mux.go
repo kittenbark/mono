@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"golang.org/x/crypto/acme/autocert"
 	"log"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"runtime"
@@ -67,7 +66,7 @@ func (server *serverDev) Handler(pattern string, fn HandlerFunc) Server {
 		defer cancel()
 
 		if err := fn(ctx, rw, req); err != nil {
-			slog.Error("handle error", "err", err.Error())
+			Log.Error("handle error", "err", err.Error())
 			_ = responseError(rw, http.StatusInternalServerError)
 			return
 		}
@@ -151,12 +150,13 @@ func (server *serverDev) Stats() Server {
 
 func (server *serverDev) TLS(cfg *tls.Config, err error) Server {
 	if IsDev() || NoTLS {
-		slog.Info("dev build, skipping tls")
+		Log.Info("mono.TLS: dev build, skipping tls")
 		return server
 	}
 
 	if err != nil {
 		data, ok := err.(*cursedTLSDataAsError)
+		Log.Debug("mono.TLS: setting server.cert", "cfg", cfg != nil, "cert", ok)
 		if !ok {
 			return server.error(err)
 		}
@@ -184,13 +184,14 @@ func (server *serverDev) Start() error {
 	if server.cert != nil {
 		server.addr = ":443"
 		go func() {
+			Log.Debug("mono.Start: have cert, proxying 80 to 443")
 			if err := http.ListenAndServe(":80", server.cert.HTTPHandler(nil)); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Fatalf("HTTP server error: %v", err)
 			}
 		}()
 	}
 
-	slog.Info(fmt.Sprintf(
+	Log.Info(fmt.Sprintf(
 		"Built in %s. Starting server at %s%s",
 		time.Since(server.buildStart).String(),
 		func() string {
@@ -202,8 +203,10 @@ func (server *serverDev) Start() error {
 		server.addr,
 	))
 	if server.tls != nil {
+		Log.Debug("mono.Start: tls != nil => ListenAndServeTLS")
 		return server.internal.ListenAndServeTLS("", "")
 	}
+	Log.Debug("mono.Start: tls == nil => ListenAndServe")
 	return server.internal.ListenAndServe()
 }
 

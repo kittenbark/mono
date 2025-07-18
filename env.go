@@ -2,6 +2,7 @@ package mono
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
@@ -16,6 +17,7 @@ var (
 	TempDir                         = "" // default OS' temp dir
 	TempDirClean                    = true
 	NoTLS                           = false
+	Log                             = slog.Default()
 
 	Filetypes = map[string][]string{
 		"img":   {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".heic"},
