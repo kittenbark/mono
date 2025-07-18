@@ -3,7 +3,6 @@ package mono
 import (
 	"fmt"
 	"html/template"
-	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
