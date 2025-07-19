@@ -10,12 +10,11 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 	"math/big"
 	"net"
-	"os"
 	"time"
 )
 
 var TLSOptions = TLSOptionsT{
-	CacheDir:     "./certs/%s", // Domain name as a sub dir.
+	CacheDir:     "certs", // Domain name as a sub dir.
 	Email:        "",
 	Organization: "Dev",
 	Country:      "US",
@@ -33,13 +32,8 @@ type TLSOptionsT struct {
 }
 
 func TLS(domains ...string) (*tls.Config, error) {
-	dir := fmt.Sprintf(TLSOptions.CacheDir, domains[0])
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return nil, fmt.Errorf("failed to create cache directory: %w", err)
-	}
-
 	manager := &autocert.Manager{
-		Cache:      autocert.DirCache(dir),
+		Cache:      autocert.DirCache(TLSOptions.CacheDir),
 		Prompt:     autocert.AcceptTOS,
 		HostPolicy: autocert.HostWhitelist(domains...),
 		Email:      TLSOptions.Email,
@@ -48,7 +42,7 @@ func TLS(domains ...string) (*tls.Config, error) {
 	return &tls.Config{
 		GetCertificate: manager.GetCertificate,
 		NextProtos:     []string{"h2", "http/1.1", "acme-tls/1"},
-		MinVersion:     tls.VersionTLS12,
+		MinVersion:     tls.VersionTLS13,
 		ServerName:     domains[0],
 	}, &cursedTLSDataAsError{manager: manager}
 }

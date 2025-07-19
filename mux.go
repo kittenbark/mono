@@ -171,16 +171,6 @@ func (server *serverDev) Start() error {
 		return server.buildError
 	}
 
-	mux := http.NewServeMux()
-	for pattern, handler := range server.handlers {
-		mux.Handle(pattern, handler)
-	}
-	server.internal = http.Server{
-		Addr:      server.addr,
-		Handler:   mux,
-		TLSConfig: server.tls,
-	}
-
 	if server.cert != nil {
 		server.addr = ":443"
 		go func() {
@@ -189,6 +179,16 @@ func (server *serverDev) Start() error {
 				log.Fatalf("HTTP server error: %v", err)
 			}
 		}()
+	}
+
+	mux := http.NewServeMux()
+	for pattern, handler := range server.handlers {
+		mux.Handle(pattern, handler)
+	}
+	server.internal = http.Server{
+		Addr:      server.addr,
+		Handler:   mux,
+		TLSConfig: server.tls,
 	}
 
 	Log.Info(fmt.Sprintf(
