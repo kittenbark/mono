@@ -5,18 +5,18 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"runtime"
 	"strconv"
 	"sync/atomic"
 )
 
 var (
 	RpsLimiterDefaultQuota    atomic.Int64
-	DefaultTailwind           atomic.Pointer[Tailwind]
 	CurrentEnv                atomic.Pointer[Environment]
 	InMemoryFilesizeThreshold int64 = 1 << 20
 	TempDir                         = "" // default OS' temp dir
 	TempDirClean                    = true
-	NoTLS                           = false
+	EnableTLS                       = EnableTLSUnspecified
 	Log                             = slog.Default()
 
 	Filetypes = map[string][]string{
@@ -26,7 +26,7 @@ var (
 	}
 	FiletypesTags = map[string]string{
 		"img":   `<img src="%s" alt="%s">`,
-		"video": `<video src="%s" alt="%s" preload="auto" loop autoplay muted controls>Does you browser support videos?</video>`,
+		"video": `<video src="%s" alt="%s" preload="metadata" loop autoplay muted controls>Does you browser support videos?</video>`,
 		"audio": `<audio src="%s" alt="%s" onloadedmetadata="this.volume=0.25" controls>Does your Linux support audio?</audio>`,
 	}
 )
@@ -37,6 +37,11 @@ const (
 	envUnspecified Environment = iota
 	EnvDev
 	EnvProd
+)
+const (
+	EnableTLSUnspecified = iota
+	EnableTLSTrue        = 1
+	EnableTLSFalse       = 2
 )
 
 func SetEnv(env Environment) {
@@ -60,13 +65,6 @@ func init() {
 		env = EnvProd
 	}
 	CurrentEnv.Store(&env)
-
-	DefaultTailwind.Store(&Tailwind{
-		CLI: "tailwind",
-	})
-	if monoTailwind, ok := os.LookupEnv("MONO_TAILWIND"); ok {
-		DefaultTailwind.Load().CLI = monoTailwind
-	}
 }
 
 var statusMessageCache = [600][]byte{}
@@ -81,4 +79,17 @@ func responseError(rw http.ResponseWriter, status int) error {
 		return err
 	}
 	return nil
+}
+
+func enableTLS() bool {
+	if EnableTLS != EnableTLSUnspecified {
+		return EnableTLS == EnableTLSTrue
+	}
+
+	switch runtime.GOOS {
+	case "windows", "darwin":
+		return false
+	default:
+		return true
+	}
 }

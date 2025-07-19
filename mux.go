@@ -149,8 +149,8 @@ func (server *serverDev) Stats() Server {
 }
 
 func (server *serverDev) TLS(cfg *tls.Config, err error) Server {
-	if IsDev() || NoTLS {
-		Log.Info("mono.TLS: dev build, skipping tls")
+	if !enableTLS() {
+		Log.Debug("mono.TLS: dev build, skipping tls")
 		return server
 	}
 

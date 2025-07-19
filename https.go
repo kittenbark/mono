@@ -93,4 +93,4 @@ type cursedTLSDataAsError struct {
 	manager *autocert.Manager
 }
 
-func (data *cursedTLSDataAsError) Error() string { return fmt.Sprintf("%v", data) }
+func (data *cursedTLSDataAsError) Error() string { return "this not a real error (its cursed)" }

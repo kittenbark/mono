@@ -35,28 +35,28 @@ var (
 			Triggers:        []string{"#### "},
 			OnNewline:       true,
 			TriggersClosing: []string{"\n"},
-			Insertion:       []string{`<h4 class="scroll-m-20 text-xl font-semibold tracking-tight">`, "</h2>\n"},
+			Insertion:       []string{`<h4 class="scroll-m-20 text-xl font-semibold tracking-tight mt-5 first:mt-0">`, "</h2>\n"},
 			Window:          []rune{'\n'},
 		},
 		&MarkdownGenericTag{
 			Triggers:        []string{"### "},
 			OnNewline:       true,
 			TriggersClosing: []string{"\n"},
-			Insertion:       []string{`<h3 class="scroll-m-20 text-2xl font-semibold tracking-tight">`, "</h2>\n"},
+			Insertion:       []string{`<h3 class="scroll-m-20 text-2xl font-semibold tracking-tight mt-5 first:mt-0">`, "</h2>\n"},
 			Window:          []rune{'\n'},
 		},
 		&MarkdownGenericTag{
 			Triggers:        []string{"## "},
 			OnNewline:       true,
 			TriggersClosing: []string{"\n"},
-			Insertion:       []string{`<h2 class="scroll-m-20 border-b pb-2 text-3xl font-semibold tracking-tight first:mt-0">`, "</h2>\n"},
+			Insertion:       []string{`<h2 class="scroll-m-20 border-b pb-2 text-3xl font-semibold tracking-tight mt-6 first:mt-0">`, "</h2>\n"},
 			Window:          []rune{'\n'},
 		},
 		&MarkdownGenericTag{
 			Triggers:        []string{"# "},
 			OnNewline:       true,
 			TriggersClosing: []string{"\n"},
-			Insertion:       []string{`<h1 class="scroll-m-20 text-center text-4xl font-extrabold tracking-tight text-balance">`, "</h1>\n"},
+			Insertion:       []string{`<h1 class="scroll-m-20 text-center text-4xl font-extrabold tracking-tight text-balance mt-6 first:mt-0">`, "</h1>\n"},
 			Window:          []rune{'\n'},
 		},
 		&MarkdownGenericTag{
@@ -148,6 +148,9 @@ func (tag *MarkdownGenericTag) Next(index int, rn rune) []MarkdownTagAction {
 	}
 	if tag.windowSize == 0 {
 		tag.windowSize = max(len(tag.Triggers[0]), len(tag.TriggersClosing[0]))
+	}
+	if index == 0 {
+		tag.oldline = false
 	}
 	if rn == '\n' {
 		defer func() { tag.oldline = false }()
