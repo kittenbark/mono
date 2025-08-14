@@ -35,8 +35,8 @@ func (tailwind *Tailwind) Apply(funcs template.FuncMap) (err error) {
 		}
 	}
 
-	funcs["tailwind"] = func() template.HTML {
-		return template.HTML(fmt.Sprintf(`<link href="%s" rel="stylesheet">`, tailwind.urlCSS()))
+	funcs["tailwind"] = func(extra ...string) template.HTML {
+		return template.HTML(fmt.Sprintf(`<link href="%s" rel="stylesheet" %s>`, tailwind.urlCSS(), strings.Join(extra, " ")))
 	}
 	return nil
 }
