@@ -1,7 +1,9 @@
 package mono
 
 import (
+	"bytes"
 	"cmp"
+	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -103,46 +105,58 @@ func (server *serverDev) Handler(pattern string, fn HandlerFunc) Server {
 }
 
 func (server *serverDev) Static(pattern string, static Static) Server {
-	data, err := static.Apply(&Context{Url: pattern})
+	page, err := static.Apply(&Context{Url: pattern})
 	if err != nil {
 		return server.error(err)
 	}
 
-	for subpattern, subdata := range data.Subpattern {
+	for subpattern, subdata := range page.Subpattern {
 		patternJoined, err := url.JoinPath(pattern, subpattern)
 		if err != nil {
 			return server.error(err)
 		}
-		_ = server.Handler(patternJoined, func(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
-			if subdata.ContentType != "" {
-				rw.Header().Set("Content-Type", subdata.ContentType)
-			}
-			if _, err = rw.Write(subdata.Data); err != nil {
-				return err
-			}
-			return nil
-		})
-		server.handlersMap[patternJoined] = fmt.Sprintf("static [%s] (%s)", sizeof(subdata.Data), subdata.ContentType)
+		server.Static(patternJoined, subdata)
 	}
-
-	if len(data.Data) == 0 {
+	if len(page.Data) == 0 {
 		return server
 	}
 
+	var gzipData []byte
+	if strings.HasPrefix(page.ContentType, "text/") {
+		gzipResult := bytes.NewBuffer(nil)
+		gzipCompressor, _ := gzip.NewWriterLevel(gzipResult, gzip.BestCompression)
+		if _, err := gzipCompressor.Write(page.Data); err != nil {
+			server.buildError = errors.Join(server.buildError, err)
+		}
+		if err := gzipCompressor.Close(); err != nil {
+			server.buildError = errors.Join(server.buildError, err)
+		}
+		gzipData = gzipResult.Bytes()
+	}
 	defer func() {
-		server.handlersMap[pattern] = fmt.Sprintf("static [%s] (%s)", sizeof(data.Data), data.ContentType)
+		// Note: this is a hack — server.Handler sets handlers[pattern]=dynamic, we override it as static.
+		if gzipData == nil {
+			server.handlersMap[pattern] = fmt.Sprintf("static [%s] (%s)", sizeof(page.Data), page.ContentType)
+		} else {
+			server.handlersMap[pattern] = fmt.Sprintf("static [%s (%s)] (%s)", sizeof(gzipData), sizeof(page.Data), page.ContentType)
+		}
 	}()
 
 	return server.Handler(pattern, func(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
 		h := rw.Header()
-		if data.ContentType != "" {
-			h.Set("Content-Type", data.ContentType)
+		if page.ContentType != "" {
+			h.Set("Content-Type", page.ContentType)
 		}
-		if strings.HasPrefix(data.ContentType, "text/css") {
+		if strings.HasPrefix(page.ContentType, "text/css") {
 			h.Set("Cache-Control", "public, max-age=604800")
 			h.Set("Expires", time.Now().Add(7*24*time.Hour).Format(http.TimeFormat))
 		}
-		if _, err = rw.Write(data.Data); err != nil {
+		data := page.Data
+		if gzipData != nil && strings.Contains(req.Header.Get("Accept-Encoding"), "gzip") {
+			data = gzipData
+			h.Set("Content-Encoding", "gzip")
+		}
+		if _, err := rw.Write(data); err != nil {
 			return err
 		}
 		return nil

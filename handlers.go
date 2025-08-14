@@ -61,9 +61,11 @@ type Static interface {
 	Apply(ctx *Context) (StaticPage, error)
 }
 
+func (page StaticPage) Apply(ctx *Context) (StaticPage, error) { return page, nil }
+
 type StaticFunc func(ctx *Context) (StaticPage, error)
 
-func (f StaticFunc) Apply(ctx *Context) (StaticPage, error) { return f(ctx) }
+func (fn StaticFunc) Apply(ctx *Context) (StaticPage, error) { return fn(ctx) }
 
 type StaticPage struct {
 	Data        []byte
