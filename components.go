@@ -15,14 +15,14 @@ func ExecuteSchema(templ *template.Template, data any) (template.HTML, error) {
 	return template.HTML(buff.String()), nil
 }
 
-func Schema(schema string, funcs template.FuncMap) (*template.Template, error) {
-	return template.New("mono.Schema").
+func Schema(schema string, funcs template.FuncMap, name ...string) (*template.Template, error) {
+	return template.New(def(name, "mono.Schema")).
 		Funcs(funcs).
 		Parse(schema)
 }
 
-func SchemaApply(schema string, funcs template.FuncMap, data any) (template.HTML, error) {
-	templ, err := Schema(schema, funcs)
+func SchemaApply(schema string, funcs template.FuncMap, data any, name ...string) (template.HTML, error) {
+	templ, err := Schema(schema, funcs, name...)
 	if err != nil {
 		return "", fmt.Errorf("mono.Schema failed to parse schema: %w", err)
 	}
@@ -34,5 +34,5 @@ func SchemaFile(filename string, funcs template.FuncMap, data any) (template.HTM
 	if err != nil {
 		return "", fmt.Errorf("mono.SchemaFile failed to read file %s: %w", filename, err)
 	}
-	return SchemaApply(string(schema), funcs, data)
+	return SchemaApply(string(schema), funcs, data, filename)
 }

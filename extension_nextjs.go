@@ -108,7 +108,7 @@ func nextjsWalk(
 		}
 		funcs := maps.Clone(funcs)
 		funcs["rel"] = func(filename string) string { return filepath.Join(root, path, filename) }
-		layout, err := dirLayout(dir, funcs)
+		layout, err := dirLayout(dir, funcs, path)
 		if err != nil {
 			return err
 		}
@@ -202,7 +202,7 @@ func nextJsWalkSpecials[T any](subdir fs.FS, funcs template.FuncMap, ctx T) map[
 	}
 }
 
-func dirLayout(dir fs.FS, funcs template.FuncMap) (*template.Template, error) {
+func dirLayout(dir fs.FS, funcs template.FuncMap, path string) (*template.Template, error) {
 	schema := `{{.Children}}`
 	_, err := directoryFS[string](dir, map[string]func(filename string) (string, error){
 		"layout.gohtml": func(filename string) (string, error) {
@@ -217,7 +217,7 @@ func dirLayout(dir fs.FS, funcs template.FuncMap) (*template.Template, error) {
 	if err != nil {
 		return nil, err
 	}
-	return Schema(schema, funcs)
+	return Schema(schema, funcs, path)
 }
 
 func directory[T any](dir string, mapped map[string]func(filename string) (T, error)) (T, error) {
