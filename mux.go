@@ -9,6 +9,7 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 	"log"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"runtime"
 	"slices"
@@ -21,6 +22,7 @@ type Server interface {
 	Static(pattern string, static Static) Server
 	Handler(pattern string, fn HandlerFunc) Server
 	Middleware(fn MiddlewareFunc) Server
+	Proxy(source, destination string) Server
 	Stats() Server
 	Addr(addr string) Server
 	TLS(cfg *tls.Config, err error) Server
@@ -52,6 +54,30 @@ type serverDev struct {
 	handlersLock sync.RWMutex
 	handlersMap  map[string]string
 	handlers     map[string]http.HandlerFunc
+}
+
+func (server *serverDev) Proxy(source, destination string) Server {
+	dest, err := url.Parse(destination)
+	if err != nil {
+		return server.error(err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(dest)
+	director := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		director(req)
+		req.URL.Path = strings.TrimPrefix(req.URL.Path, source)
+		if req.URL.Path == "" {
+			req.URL.Path = "/"
+		}
+	}
+	return server.Handler(source, func(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
+		req.URL.Path = strings.TrimPrefix(req.URL.Path, source)
+		if req.URL.Path == "" {
+			req.URL.Path = "/"
+		}
+		proxy.ServeHTTP(rw, req)
+		return nil
+	})
 }
 
 func (server *serverDev) Handler(pattern string, fn HandlerFunc) Server {
@@ -136,7 +162,11 @@ func (server *serverDev) Middleware(fn MiddlewareFunc) Server {
 func (server *serverDev) Stats() Server {
 	stats := []string{}
 	for pattern, type_ := range server.handlersMap {
-		stats = append(stats, fmt.Sprintf("http://localhost%s%s -> %s", server.addr, pattern, type_))
+		if IsLocal() || server.tls == nil {
+			stats = append(stats, fmt.Sprintf("http://localhost%s%s -> %s", server.addr, pattern, type_))
+		} else {
+			stats = append(stats, fmt.Sprintf("https://%s%s -> %s", server.tls.ServerName, pattern, type_))
+		}
 	}
 	slices.SortStableFunc(stats, func(a, b string) int {
 		if len(a) == len(b) {

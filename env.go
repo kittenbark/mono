@@ -1,18 +1,19 @@
 package mono
 
 import (
+	"bufio"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
-	"runtime"
 	"strconv"
+	"strings"
 	"sync/atomic"
 )
 
 var (
 	RpsLimiterDefaultQuota    atomic.Int64
-	CurrentEnv                atomic.Pointer[Environment]
+	CurrentEnv                Environment
 	InMemoryFilesizeThreshold int64 = 1 << 20
 	TempDir                         = "" // default OS' temp dir
 	TempDirClean                    = true
@@ -31,10 +32,39 @@ var (
 	}
 )
 
+func init() {
+	RpsLimiterDefaultQuota.Store(10)
+	if monoRps, ok := os.LookupEnv("MONO_RPS"); ok {
+		if rps, err := strconv.ParseInt(monoRps, 10, 64); err == nil {
+			RpsLimiterDefaultQuota.Store(rps)
+		}
+	}
+
+	if CurrentEnv == envUnspecified {
+		switch strings.ToLower(os.Getenv("MONO_ENV")) {
+		case "":
+			if isDocker() {
+				CurrentEnv = EnvProd
+				break
+			}
+			fallthrough
+		case "local":
+			CurrentEnv = EnvLocal
+		case "dev":
+			CurrentEnv = EnvDev
+		case "prod":
+			CurrentEnv = EnvProd
+		default:
+			panic(fmt.Sprintf("unknown environment variable MONO_ENV: %s", os.Getenv("MONO_ENV")))
+		}
+	}
+}
+
 type Environment int64
 
 const (
 	envUnspecified Environment = iota
+	EnvLocal
 	EnvDev
 	EnvProd
 )
@@ -44,28 +74,8 @@ const (
 	EnableTLSFalse       = 2
 )
 
-func SetEnv(env Environment) {
-	CurrentEnv.Store(&env)
-}
-
-func IsDev() bool {
-	return *CurrentEnv.Load() == EnvDev
-}
-
-func init() {
-	RpsLimiterDefaultQuota.Store(10)
-	if monoRps, ok := os.LookupEnv("MONO_RPS"); ok {
-		if rps, err := strconv.ParseInt(monoRps, 10, 64); err == nil {
-			RpsLimiterDefaultQuota.Store(rps)
-		}
-	}
-
-	env := EnvDev
-	if os.Getenv("MONO_ENV") == "PROD" {
-		env = EnvProd
-	}
-	CurrentEnv.Store(&env)
-}
+func IsLocal() bool { return CurrentEnv == EnvLocal }
+func IsDev() bool   { return CurrentEnv == EnvDev }
 
 var statusMessageCache = [600][]byte{}
 
@@ -85,11 +95,22 @@ func enableTLS() bool {
 	if EnableTLS != EnableTLSUnspecified {
 		return EnableTLS == EnableTLSTrue
 	}
+	return !IsLocal()
+}
 
-	switch runtime.GOOS {
-	case "windows", "darwin":
+func isDocker() bool {
+	file, err := os.Open("/proc/1/cgroup")
+	if err != nil {
 		return false
-	default:
-		return true
 	}
+	defer func(file *os.File) { _ = file.Close() }(file)
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.Contains(line, "docker") || strings.Contains(line, "containerd") {
+			return true
+		}
+	}
+	return false
 }

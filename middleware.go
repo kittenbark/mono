@@ -19,7 +19,7 @@ func SaneHeaders(handler HandlerFunc) HandlerFunc {
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 
-		if IsDev() {
+		if IsLocal() || IsDev() {
 			h.Set("Cache-Control", "no-cache, no-store, must-revalidate")
 			h.Set("Pragma", "no-cache")
 			h.Set("Expires", "0")

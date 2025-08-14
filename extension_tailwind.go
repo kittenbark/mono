@@ -36,12 +36,7 @@ func (tailwind *Tailwind) Apply(funcs template.FuncMap) (err error) {
 	}
 
 	funcs["tailwind"] = func() template.HTML {
-		result := template.HTML(fmt.Sprintf(`<link href="%s" rel="stylesheet">`, tailwind.urlCSS()))
-		if IsDev() {
-			return `<script src="https://cdn.tailwindcss.com"></script>
-	` + result
-		}
-		return result
+		return template.HTML(fmt.Sprintf(`<link href="%s" rel="stylesheet">`, tailwind.urlCSS()))
 	}
 	return nil
 }
@@ -52,14 +47,6 @@ func (tailwind *Tailwind) SideEffects(result *StaticPage) error {
 	}
 	if tailwind.InputCSS == "" {
 		tailwind.InputCSS = DefaultTailwindInputCSS
-	}
-
-	if IsDev() {
-		result.Subpattern[tailwind.urlCSS()] = StaticPage{
-			ContentType: "text/css; charset=utf-8",
-			Data:        []byte(tailwind.InputCSS),
-		}
-		return nil
 	}
 
 	dir, err := os.MkdirTemp(TempDir, "mono_tailwind_*")
@@ -88,14 +75,7 @@ func (tailwind *Tailwind) SideEffects(result *StaticPage) error {
 		}
 	}
 
-	if err := os.WriteFile(filepath.Join(dir, "tailwind.config.js"), []byte(fmt.Sprintf(`
-module.exports = {
-  content: ["./content/*"],
-  theme: {
-    extend: {},
-  },
-  plugins: [],
-}`)), 0755); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "tailwind.config.js"), []byte(`module.exports = {content: ["./content/*"], theme: {extend: {}}, plugins: []}`), 0755); err != nil {
 		return err
 	}
 
@@ -131,9 +111,6 @@ module.exports = {
 }
 
 func (tailwind *Tailwind) urlCSS() string {
-	if IsDev() {
-		return fmt.Sprintf("/mono/dev/tailwind/%s", tailwind.CSS)
-	}
 	return fmt.Sprintf("/mono/tailwind/%s", tailwind.CSS)
 }
 
