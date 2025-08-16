@@ -8,6 +8,13 @@
 }
 
 @layer base {
+    body {
+        font-family: 'Inter', sans-serif;
+        font-feature-settings: "rlig" 1, "calt" 1;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+
     code, pre, kbd, samp {
         font-family: 'JetBrains Mono', monospace;
     }
@@ -22,10 +29,6 @@
 html, body {
     width: 100%;
     overflow-x: hidden;
-}
-
-main {
-    font-family: 'Inter', sans-serif;
 }
 
 :root {
