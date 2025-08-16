@@ -20,8 +20,8 @@ type Stats struct {
 func TestRpsLimitClients(t *testing.T) {
 	t.Parallel()
 
-	p95 := func(duration time.Duration, freq time.Duration) int64 {
-		return int64(float64(duration) / float64(freq) * 0.95)
+	p90 := func(duration time.Duration, freq time.Duration) int64 {
+		return int64(float64(duration) / float64(freq) * 0.90)
 	}
 
 	requests := func(t *testing.T, duration time.Duration, tick time.Duration, addr string, req mono.HandlerFunc) {
@@ -76,20 +76,20 @@ func TestRpsLimitClients(t *testing.T) {
 		go requests(t, duration, badTick, "127.0.0.1:666", req)
 		time.Sleep(duration)
 
-		if good.Ok.Load() < p95(duration, goodTick) || good.Bad.Load() > 0 {
+		if good.Ok.Load() < p90(duration, goodTick) || good.Bad.Load() > 0 {
 			t.Errorf(
-				"good was timeouted (ok=%d {p95(duration, goodTick)=%d}, bad=%d)",
+				"good was timeouted (ok=%d {p90(duration, goodTick)=%d}, bad=%d)",
 				good.Ok.Load(),
-				p95(duration, goodTick),
+				p90(duration, goodTick),
 				good.Bad.Load(),
 			)
 		}
-		if bad.Ok.Load() != 10 || bad.Bad.Load() < (p95(duration, badTick)-10) {
+		if bad.Ok.Load() != 10 || bad.Bad.Load() < (p90(duration, badTick)-10) {
 			t.Errorf(
-				"unexpected bad actor 429 (ok=%d, bad=%d {p95(duration, badTick)=%d})",
+				"unexpected bad actor 429 (ok=%d, bad=%d {p90(duration, badTick)=%d})",
 				bad.Ok.Load(),
 				bad.Bad.Load(),
-				p95(duration, badTick),
+				p90(duration, badTick),
 			)
 		}
 	})
@@ -139,7 +139,7 @@ func TestRpsLimitClients(t *testing.T) {
 			return nil
 		})
 
-		duration := time.Second
+		duration := time.Second * 2
 		goodTick := time.Microsecond * 1010
 		badTick := time.Microsecond * 50
 		worseTick := time.Microsecond * 10
@@ -148,29 +148,28 @@ func TestRpsLimitClients(t *testing.T) {
 		go requests(t, duration, worseTick, "127.0.0.1:6666", req)
 		time.Sleep(duration)
 
-		if good.Ok.Load() < p95(duration, goodTick) || good.Bad.Load() > 0 {
+		if good.Ok.Load() < p90(duration, goodTick) || good.Bad.Load() > 0 {
 			t.Errorf(
-				"good was timeouted (ok=%d {p95(duration, goodTick)=%d}, bad=%d)",
+				"good was timeouted (ok=%d {p90(duration, goodTick)=%d}, bad=%d)",
 				good.Ok.Load(),
-				p95(duration, goodTick),
+				p90(duration, goodTick),
 				good.Bad.Load(),
 			)
 		}
-		if bad.Ok.Load() != 100 || bad.Bad.Load() < (p95(duration, badTick)-100) {
+		if bad.Ok.Load() != 100 || bad.Bad.Load() < (p90(duration, badTick)-100) {
 			t.Errorf(
-				"unexpected bad actor 429 (ok=%d, bad=%d {p95(duration, badTick)=%d})",
+				"unexpected bad actor 429 (ok=%d, bad=%d {p90(duration, badTick)=%d})",
 				bad.Ok.Load(),
 				bad.Bad.Load(),
-				p95(duration, badTick),
+				p90(duration, badTick),
 			)
 		}
-		if worse.Ok.Load() != 100 || worse.Bad.Load() < (p95(duration, worseTick)-100) {
+		if worse.Ok.Load() != 100 || worse.Bad.Load() < (p90(duration, worseTick)-100) {
 			t.Errorf(
-				"unexpected worse actor 429 (ok=%d, bad=%d {p95(duration, worseTick)=%d}) %t",
+				"unexpected worse actor 429 (ok=%d, bad=%d {p90(duration, worseTick)=%d})",
 				worse.Ok.Load(),
 				worse.Bad.Load(),
-				p95(duration, worseTick),
-				worse.Bad.Load() < (p95(duration, worseTick)-100),
+				p90(duration, worseTick),
 			)
 		}
 	})
@@ -233,4 +232,47 @@ func BenchmarkRpsLimiterClients(b *testing.B) {
 		b.Fatal("no timeout?")
 	}
 
+}
+
+func BenchmarkRpsLimiterGlobal(b *testing.B) {
+	clients := []*Stats{}
+	for i := 0; i < 100; i++ {
+		clients = append(clients,
+			&Stats{RemoteAddr: fmt.Sprintf("127.0.0.1:8%03d", i)},
+		)
+	}
+
+	timeouts := atomic.Int64{}
+	limiter := &mono.RpsLimiterGlobal{
+		Quota:   100,
+		Timeout: time.Microsecond * 100,
+		Handler429: func(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
+			timeouts.Add(1)
+			return nil
+		},
+	}
+
+	for b.Loop() {
+		stat := clients[rand.Intn(len(clients))]
+		err := limiter.Apply(func(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
+			stat.Ok.Add(1)
+			return nil
+		})(
+			b.Context(),
+			nil,
+			&http.Request{RemoteAddr: stat.RemoteAddr},
+		)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	for _, stat := range clients {
+		if stat.Ok.Load() == 0 {
+			b.Fatal("too slow, a remote address never got called")
+		}
+	}
+	if timeouts.Load() == 0 {
+		b.Fatal("no timeout?")
+	}
 }

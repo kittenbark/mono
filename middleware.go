@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -44,8 +45,59 @@ func RpsLimitClients(quota int64, handler429 ...HandlerFunc) MiddlewareFunc {
 		Timeout:    time.Second,
 		Handler429: def(handler429, defaultHandler429),
 	}
-	return func(handler HandlerFunc) HandlerFunc {
-		return limiter.Apply(handler)
+	return limiter.Apply
+}
+
+func RpsLimitGlobal(quota int64, handler429 ...HandlerFunc) MiddlewareFunc {
+	limiter := &RpsLimiterGlobal{
+		Quota:      quota,
+		Timeout:    time.Second,
+		Handler429: def(handler429, defaultHandler429),
+	}
+	return limiter.Apply
+}
+
+type RpsLimiterGlobal struct {
+	Quota      int64
+	Timeout    time.Duration
+	Handler429 HandlerFunc
+	Cleans     chan time.Time
+	checkedEnv bool
+	state      atomic.Int64
+	cleaning   atomic.Bool
+}
+
+func (limiter *RpsLimiterGlobal) Apply(handler HandlerFunc) HandlerFunc {
+	if limiter.Timeout == 0 {
+		limiter.Timeout = time.Second
+	}
+	if limiter.Handler429 == nil {
+		limiter.Handler429 = defaultHandler429
+	}
+	if limiter.Cleans == nil {
+		limiter.Cleans = make(chan time.Time, limiter.Quota)
+	}
+	if !tryQuotaFromEnv(EnvMonoEnv, &limiter.checkedEnv, &limiter.Quota) {
+		return handler
+	}
+
+	if limiter.cleaning.CompareAndSwap(false, true) {
+		go func() {
+			for clean := range limiter.Cleans {
+				if diff := clean.Sub(time.Now()); diff > 0 {
+					time.Sleep(diff)
+				}
+				limiter.state.Add(-1)
+			}
+		}()
+	}
+
+	return func(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
+		defer func() { limiter.Cleans <- time.Now().Add(limiter.Timeout) }()
+		if limiter.state.Add(1) > limiter.Quota {
+			return limiter.Handler429(ctx, rw, req)
+		}
+		return handler(ctx, rw, req)
 	}
 }
 
@@ -60,13 +112,8 @@ type RpsLimiterClients struct {
 }
 
 func (limit *RpsLimiterClients) Apply(handler HandlerFunc) HandlerFunc {
-	if limit.Quota <= 0 {
-		if limit.checkedEnv {
-			return handler
-		}
-		if !limit.tryQuotaFromEnv() {
-			return handler
-		}
+	if !tryQuotaFromEnv(EnvMonoRpsClients, &limit.checkedEnv, &limit.Quota) {
+		return handler
 	}
 	if limit.limits == nil {
 		limit.limits = map[string]int64{}
@@ -103,35 +150,15 @@ func (limit *RpsLimiterClients) rate(addr string) int64 {
 			delete(limit.limits, clean.RemoteAddr)
 		}
 	}
-	if cleaned >= 0 {
-		limit.cleans = limit.cleans[cleaned+1:]
-	}
 
-	limit.cleans = append(limit.cleans, limitClean{
-		RemoteAddr: addr,
-		After:      current.Add(limit.Timeout),
-	})
+	limit.cleans = append(
+		limit.cleans[cleaned+1:],
+		limitClean{
+			RemoteAddr: addr,
+			After:      current.Add(limit.Timeout),
+		},
+	)
 	return limit.limits[addr]
-}
-
-func (limit *RpsLimiterClients) tryQuotaFromEnv() (ok bool) {
-	if limit.checkedEnv {
-		return false
-	}
-	limit.checkedEnv = true
-	monoRpsClientsEnv, ok := os.LookupEnv(EnvMonoRpsClients)
-	if !ok {
-		return false
-	}
-	monoRpsClients, err := strconv.ParseInt(monoRpsClientsEnv, 10, 64)
-	if err != nil {
-		return false
-	}
-	limit.Quota = monoRpsClients
-	if limit.Quota <= 0 {
-		return false
-	}
-	return true
 }
 
 type limitClean struct {
@@ -153,4 +180,25 @@ func interpretPanicsAsError(handler HandlerFunc) HandlerFunc {
 
 func defaultHandler429(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
 	return responseError(rw, http.StatusTooManyRequests)
+}
+
+func tryQuotaFromEnv(env string, checked *bool, quota *int64) (ok bool) {
+	if *quota > 0 {
+		return true
+	}
+	if *checked {
+		return false
+	}
+	*checked = true
+
+	val, ok := os.LookupEnv(env)
+	if !ok {
+		return false
+	}
+	parsed, err := strconv.ParseInt(val, 10, 64)
+	if err != nil {
+		return false
+	}
+	*quota = parsed
+	return *quota > 0
 }

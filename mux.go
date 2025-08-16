@@ -211,7 +211,13 @@ func (server *serverDev) TLS(cfg *tls.Config, err error) Server {
 	return server
 }
 
-func (server *serverDev) Start() error {
+func (server *serverDev) Start() (err error) {
+	defer func() {
+		if errors.Is(err, http.ErrServerClosed) {
+			err = nil
+		}
+	}()
+
 	if server.buildError != nil {
 		return server.buildError
 	}

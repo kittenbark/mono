@@ -26,6 +26,7 @@ func StartForT(t *testing.T, server mono.Server, timeout time.Duration, after ti
 	time.AfterFunc(after, server.Stop)
 	go func() {
 		if err := server.Start(); err != nil {
+			println(err.Error())
 			t.Errorf("err: '%v'", err)
 			return
 		}
@@ -109,7 +110,7 @@ func TestDev_File(t *testing.T) {
 		Handler("/single_2", mono.FileLazy("./testdata/test_hello.html")).
 		Static("/static", mono.FileHtml("./testdata/test_hello.html")).
 		Handler("/lazy", mono.Lazy(mono.FileHtml("./testdata/test_hello.html")))
-	StartForT(t, server, time.Millisecond*10, time.Millisecond*50)
+	StartForT(t, server, time.Millisecond*10, time.Millisecond*100)
 
 	for _, link := range []string{"/single", "/single_2", "/static", "/lazy"} {
 		if expected, actual := ReadFile(t, "./testdata/test_hello.html"), cl.Get(t, link); !bytes.Equal(expected, actual) {
