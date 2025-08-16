@@ -6,16 +6,17 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
-	"sync/atomic"
 )
 
 var (
-	RpsLimiterDefaultQuota    atomic.Int64
+	EnvMonoEnv        = "MONO_ENV"
+	EnvMonoRps        = "MONO_RPS"
+	EnvMonoRpsClients = "MONO_RPS_CLIENTS"
+
 	CurrentEnv                Environment
 	InMemoryFilesizeThreshold int64 = 1 << 20
-	TempDir                         = "" // default OS' temp dir
+	TempDir                         = "" // "" <=> default OS' temp dir
 	TempDirClean                    = true
 	EnableTLS                       = EnableTLSUnspecified
 	Log                             = slog.Default()
@@ -33,15 +34,8 @@ var (
 )
 
 func init() {
-	RpsLimiterDefaultQuota.Store(10)
-	if monoRps, ok := os.LookupEnv("MONO_RPS"); ok {
-		if rps, err := strconv.ParseInt(monoRps, 10, 64); err == nil {
-			RpsLimiterDefaultQuota.Store(rps)
-		}
-	}
-
 	if CurrentEnv == envUnspecified {
-		switch strings.ToLower(os.Getenv("MONO_ENV")) {
+		switch strings.ToLower(os.Getenv(EnvMonoEnv)) {
 		case "":
 			if isDocker() {
 				CurrentEnv = EnvProd

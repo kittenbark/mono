@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -34,56 +36,107 @@ func SaneHeaders(handler HandlerFunc) HandlerFunc {
 	}
 }
 
-type RpsLimiter struct {
-	Quota   int64
-	Timeout time.Duration
-	mutex   sync.Mutex
-	limits  map[string]int64
+// RpsLimitClients shows 429 for each client, which len(requests) > quota in the last second.
+// Use RpsLimiterClients if you need a different timeout from 1s.
+func RpsLimitClients(quota int64, handler429 ...HandlerFunc) MiddlewareFunc {
+	limiter := &RpsLimiterClients{
+		Quota:      quota,
+		Timeout:    time.Second,
+		Handler429: def(handler429, defaultHandler429),
+	}
+	return func(handler HandlerFunc) HandlerFunc {
+		return limiter.Apply(handler)
+	}
 }
 
-func (limit *RpsLimiter) Apply(handler HandlerFunc) HandlerFunc {
+type RpsLimiterClients struct {
+	Quota      int64
+	Timeout    time.Duration
+	Handler429 HandlerFunc
+	mutex      sync.Mutex
+	limits     map[string]int64
+	checkedEnv bool
+	cleans     []limitClean
+}
+
+func (limit *RpsLimiterClients) Apply(handler HandlerFunc) HandlerFunc {
+	if limit.Quota <= 0 {
+		if limit.checkedEnv {
+			return handler
+		}
+		if !limit.tryQuotaFromEnv() {
+			return handler
+		}
+	}
 	if limit.limits == nil {
 		limit.limits = map[string]int64{}
-	}
-	if limit.Quota == 0 {
-		limit.Quota = RpsLimiterDefaultQuota.Load()
 	}
 	if limit.Timeout == 0 {
 		limit.Timeout = time.Second
 	}
+	if limit.Handler429 == nil {
+		limit.Handler429 = defaultHandler429
+	}
 
 	return func(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
 		if limit.rate(req.RemoteAddr) > limit.Quota {
-			return responseError(rw, http.StatusTooManyRequests)
+			return limit.Handler429(ctx, rw, req)
 		}
 		return handler(ctx, rw, req)
 	}
 }
 
-func (limit *RpsLimiter) rate(addr string) int64 {
+func (limit *RpsLimiterClients) rate(addr string) int64 {
 	limit.mutex.Lock()
 	defer limit.mutex.Unlock()
 
 	limit.limits[addr] += 1
-	time.AfterFunc(limit.Timeout, func() {
-		limit.mutex.Lock()
-		defer limit.mutex.Unlock()
-		limit.limits[addr] -= 1
-		if limit.limits[addr] == 0 {
-			delete(limit.limits, addr)
+	current := time.Now()
+	cleaned := -1
+	for i, clean := range limit.cleans {
+		if clean.After.After(current) {
+			break
 		}
+		cleaned = i
+		limit.limits[clean.RemoteAddr] -= 1
+		if limit.limits[clean.RemoteAddr] == 0 {
+			delete(limit.limits, clean.RemoteAddr)
+		}
+	}
+	if cleaned >= 0 {
+		limit.cleans = limit.cleans[cleaned+1:]
+	}
+
+	limit.cleans = append(limit.cleans, limitClean{
+		RemoteAddr: addr,
+		After:      current.Add(limit.Timeout),
 	})
 	return limit.limits[addr]
 }
 
-var rpsLimiter = sync.OnceValue(func() *RpsLimiter { return &RpsLimiter{} })
-
-func RpsLimit(quota int64) MiddlewareFunc {
-	rpsLimiter().Quota = quota
-	return func(handler HandlerFunc) HandlerFunc {
-		limiter := rpsLimiter()
-		return limiter.Apply(handler)
+func (limit *RpsLimiterClients) tryQuotaFromEnv() (ok bool) {
+	if limit.checkedEnv {
+		return false
 	}
+	limit.checkedEnv = true
+	monoRpsClientsEnv, ok := os.LookupEnv(EnvMonoRpsClients)
+	if !ok {
+		return false
+	}
+	monoRpsClients, err := strconv.ParseInt(monoRpsClientsEnv, 10, 64)
+	if err != nil {
+		return false
+	}
+	limit.Quota = monoRpsClients
+	if limit.Quota <= 0 {
+		return false
+	}
+	return true
+}
+
+type limitClean struct {
+	After      time.Time
+	RemoteAddr string
 }
 
 func interpretPanicsAsError(handler HandlerFunc) HandlerFunc {
@@ -96,4 +149,8 @@ func interpretPanicsAsError(handler HandlerFunc) HandlerFunc {
 
 		return errors.Join(handler(ctx, rw, req), ctx.Err())
 	}
+}
+
+func defaultHandler429(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
+	return responseError(rw, http.StatusTooManyRequests)
 }

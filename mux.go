@@ -121,6 +121,7 @@ func (server *serverDev) Static(pattern string, static Static) Server {
 		return server
 	}
 
+	// Note: this section might be CPU intensive, could be a good place for parallelization.
 	var gzipData []byte
 	if strings.HasPrefix(page.ContentType, "text/") {
 		gzipResult := bytes.NewBuffer(nil)
