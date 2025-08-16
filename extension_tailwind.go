@@ -14,7 +14,7 @@ import (
 )
 
 //go:embed extension_tailwind.css
-var DefaultTailwindInputCSS string
+var Stylesheet string
 
 type Tailwind struct {
 	CLI      string
@@ -46,7 +46,7 @@ func (tailwind *Tailwind) SideEffects(result *StaticPage) error {
 		tailwind.CLI = "npx @tailwindcss/cli"
 	}
 	if tailwind.InputCSS == "" {
-		tailwind.InputCSS = DefaultTailwindInputCSS
+		tailwind.InputCSS = Stylesheet
 	}
 
 	dir, err := os.MkdirTemp(TempDir, "mono_tailwind_*")
