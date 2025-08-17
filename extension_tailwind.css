@@ -149,4 +149,8 @@ html, body {
     body {
         @apply bg-background text-foreground;
     }
+
+    a, button, h1, h2, h3 {
+        @apply font-medium;
+    }
 }
