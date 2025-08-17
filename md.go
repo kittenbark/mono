@@ -23,7 +23,7 @@ var (
 						}
 						return data[from+1 : to]
 					}}).
-					Parse(`<div class="bg-muted relative rounded mt-5 first:mt-0"><pre class="font-mono text-sm p-[0.5rem]"><code>{{transform .Children}}</code></pre></div>`),
+					Parse(`<div class="bg-muted relative rounded mt-5 first:mt-0 w-full max-w-full"><pre class="font-mono text-xs sm:text-sm p-2 sm:p-4 overflow-x-auto whitespace-pre-wrap break-words"><code>{{transform .Children}}</code></pre></div>`),
 				),
 			},
 		},

@@ -9,7 +9,7 @@
 
 @layer base {
     main {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Inter', '-apple-system', 'Roboto', sans-serif;
         font-feature-settings: "rlig" 1, "calt" 1;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;

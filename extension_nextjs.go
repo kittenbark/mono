@@ -108,10 +108,6 @@ func nextjsWalk(
 		}
 		funcs := maps.Clone(funcs)
 		funcs["rel"] = func(filename string) string { return filepath.Join(root, path, filename) }
-		layout, err := dirLayout(dir, funcs, path)
-		if err != nil {
-			return err
-		}
 
 		list, err := fs.ReadDir(dir, path)
 		if err != nil {
@@ -128,7 +124,12 @@ func nextjsWalk(
 			Context  Context
 			Children template.HTML
 		}
-		ctx := Data{Context: Context{Funcs: funcs}}
+		ctx := Data{Context: Context{
+			Funcs:    funcs,
+			Filename: filepath.Base(path),
+			Url:      filepath.Clean("/" + path),
+		}}
+		fmt.Printf("%#v", ctx)
 		funcs["ctx"] = func() Context { return ctx.Context }
 
 		subdir, err := fs.Sub(dir, path)
@@ -161,6 +162,10 @@ func nextjsWalk(
 		}
 
 		buff := bytes.Buffer{}
+		layout, err := dirLayout(dir, funcs, path)
+		if err != nil {
+			return err
+		}
 		if err = layout.Execute(&buff, ctx); err != nil {
 			return fmt.Errorf("layout.Execute: %w", err)
 		}
