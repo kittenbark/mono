@@ -129,7 +129,6 @@ func nextjsWalk(
 			Filename: filepath.Base(path),
 			Url:      filepath.Clean("/" + path),
 		}}
-		fmt.Printf("%#v", ctx)
 		funcs["ctx"] = func() Context { return ctx.Context }
 
 		subdir, err := fs.Sub(dir, path)
