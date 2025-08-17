@@ -177,11 +177,7 @@ func (server *serverDev) Middleware(fn MiddlewareFunc) Server {
 func (server *serverDev) Stats() Server {
 	stats := []string{}
 	for pattern, type_ := range server.handlersMap {
-		if IsLocal() || server.tls == nil {
-			stats = append(stats, fmt.Sprintf("http://localhost%s%s -> %s", server.addr, pattern, type_))
-		} else {
-			stats = append(stats, fmt.Sprintf("https://%s%s -> %s", server.tls.ServerName, pattern, type_))
-		}
+		stats = append(stats, fmt.Sprintf("%s%s -> %s", server.hostname(), pattern, type_))
 	}
 	slices.SortStableFunc(stats, func(a, b string) int {
 		if len(a) == len(b) {
@@ -232,6 +228,7 @@ func (server *serverDev) Start() (err error) {
 		}()
 	}
 
+	server.robotsTxt()
 	mux := http.NewServeMux()
 	for pattern, handler := range server.handlers {
 		mux.Handle(pattern, handler)
@@ -243,15 +240,9 @@ func (server *serverDev) Start() (err error) {
 	}
 
 	Log.Info(fmt.Sprintf(
-		"Built in %s. Starting server at %s%s",
+		"Built in %s. Starting server at %s",
 		time.Since(server.buildStart).String(),
-		func() string {
-			if server.tls == nil {
-				return "http://localhost"
-			}
-			return "https://" + server.tls.ServerName
-		}(),
-		server.addr,
+		server.hostname(),
 	))
 	if server.tls != nil {
 		Log.Debug("mono.Start: tls != nil => ListenAndServeTLS")
@@ -287,6 +278,24 @@ func (server *serverDev) init() {
 	server.buildStart = time.Now()
 	server.handlersMap = make(map[string]string)
 	server.handlers = make(map[string]http.HandlerFunc)
+}
+
+func (server *serverDev) hostname() string {
+	if server.tls == nil {
+		return fmt.Sprintf("http://localhost%s", server.addr)
+	}
+	return "https://" + server.tls.ServerName
+}
+
+func (server *serverDev) robotsTxt() {
+	if _, ok := server.handlersMap["/robots.txt"]; ok {
+		return
+	}
+
+	const schema = `User-agent: *
+Allow: /
+Disallow: /mono/cdn/*`
+	server.Static("/robots.txt", StaticPage{Data: []byte(schema), ContentType: "text/plain"})
 }
 
 var sizeofSuffix = []string{"b", "kb", "mb", "gb", "tb", "pb"}

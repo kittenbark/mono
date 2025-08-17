@@ -111,7 +111,7 @@ func (tailwind *Tailwind) SideEffects(result *StaticPage) error {
 }
 
 func (tailwind *Tailwind) urlCSS() string {
-	return fmt.Sprintf("/mono/tailwind/%s", tailwind.CSS)
+	return fmt.Sprintf("/mono/cdn/tailwind/%s", tailwind.CSS)
 }
 
 func removeTemp(path string) error {

@@ -77,7 +77,7 @@ func (limiter *RpsLimiterGlobal) Apply(handler HandlerFunc) HandlerFunc {
 	if limiter.Cleans == nil {
 		limiter.Cleans = make(chan time.Time, limiter.Quota)
 	}
-	if !tryQuotaFromEnv(EnvMonoEnv, &limiter.checkedEnv, &limiter.Quota) {
+	if !tryQuotaFromEnv(EnvMonoRps, &limiter.checkedEnv, &limiter.Quota) {
 		return handler
 	}
 
