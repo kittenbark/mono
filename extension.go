@@ -114,7 +114,7 @@ func (extension *extensionFile) SideEffects(result *StaticPage) error {
 			return err
 		}
 		url, _ := extension.url(filename)
-		result.Subpattern[url] = StaticPage{
+		result.Subpattern[url] = &StaticPage{
 			ContentType: http.DetectContentType(data),
 			Data:        data,
 		}
@@ -128,5 +128,5 @@ func (extension *extensionFile) url(filename string) (url string, cached bool) {
 	if url, cached = extension.urls[filename]; cached {
 		return
 	}
-	return fmt.Sprintf("/mono/cdn/file/%s%s", hash(filename), filepath.Ext(filename)), false
+	return fmt.Sprintf("/mono/cdn/file/%s%s", hashFile(filename), filepath.Ext(filename)), false
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
@@ -70,7 +71,7 @@ func (fn StaticFunc) Apply(ctx *Context) (StaticPage, error) { return fn(ctx) }
 type StaticPage struct {
 	Data        []byte
 	ContentType string
-	Subpattern  map[string]StaticPage
+	Subpattern  map[string]*StaticPage
 }
 
 func Lazy(static Static) HandlerFunc {
@@ -147,8 +148,21 @@ func def[T any](value []T, otherwise T) T {
 	return value[0]
 }
 
-func hash(str string) string {
-	result := sha256.New224()
-	result.Write([]byte(str))
-	return hex.EncodeToString(result.Sum(nil))
+func hashFile(filename string) string {
+	result := sha256.New()
+	err := func() error {
+		file, err := os.Open(filename)
+		if err != nil {
+			return err
+		}
+		defer func() { err = errors.Join(err, file.Close()) }()
+		if _, err = io.Copy(result, file); err != nil {
+			result.Write([]byte(filename))
+		}
+		return nil
+	}
+	if err != nil {
+		result.Write([]byte(filename))
+	}
+	return hex.EncodeToString(result.Sum(nil))[:16]
 }

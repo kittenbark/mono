@@ -3,9 +3,12 @@ package mono
 import (
 	"context"
 	_ "embed"
+	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"html/template"
+	"math/rand/v2"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,11 +25,18 @@ type Tailwind struct {
 	InputCSS string
 	Context  context.Context
 	Timeout  time.Duration
+	Inline   bool
+	tags     map[string]struct{}
 }
 
 func (tailwind *Tailwind) Apply(funcs template.FuncMap) (err error) {
 	if tailwind.CSS == "" {
-		tailwind.CSS = fmt.Sprintf("%d.css", time.Now().UnixNano())
+		buf := make([]byte, 8)
+		binary.BigEndian.PutUint64(buf, rand.Uint64())
+		tailwind.CSS = fmt.Sprintf("%s.css", hex.EncodeToString(buf))
+	}
+	if tailwind.tags == nil {
+		tailwind.tags = map[string]struct{}{}
 	}
 	if !filepath.IsAbs(tailwind.CLI) {
 		tailwind.CLI, err = filepath.Abs(tailwind.CLI)
@@ -35,9 +45,7 @@ func (tailwind *Tailwind) Apply(funcs template.FuncMap) (err error) {
 		}
 	}
 
-	funcs["tailwind"] = func(extra ...string) template.HTML {
-		return template.HTML(fmt.Sprintf(`<link href="%s" rel="stylesheet" %s>`, tailwind.urlCSS(), strings.Join(extra, " ")))
-	}
+	funcs["tailwind"] = tailwind.tag
 	return nil
 }
 
@@ -99,19 +107,47 @@ func (tailwind *Tailwind) SideEffects(result *StaticPage) error {
 		return fmt.Errorf("err: %v (%s)", err, string(output))
 	}
 
-	resultData, err := os.ReadFile(outputCSS)
+	dataCSS, err := os.ReadFile(outputCSS)
 	if err != nil {
 		return err
 	}
-	result.Subpattern[tailwind.urlCSS()] = StaticPage{
-		ContentType: "text/css; charset=utf-8",
-		Data:        resultData,
+
+	if !tailwind.Inline {
+		result.Subpattern[tailwind.urlCSS()] = &StaticPage{
+			ContentType: "text/css; charset=utf-8",
+			Data:        dataCSS,
+		}
+		return nil
+	}
+
+	replaces := []string{}
+	styleTag, err := SchemaApply(`<style>{{.Data}}</style>`, nil, struct{ Data template.CSS }{template.CSS(dataCSS)})
+	if err != nil {
+		return err
+	}
+
+	for tag, _ := range tailwind.tags {
+		replaces = append(replaces, tag, string(styleTag))
+	}
+
+	inliner := strings.NewReplacer(replaces...)
+	if len(result.Data) > 0 {
+		result.Data = []byte(inliner.Replace(string(result.Data)))
+	}
+	for _, page := range result.Subpattern {
+		page.Data = []byte(inliner.Replace(string(page.Data)))
 	}
 	return nil
 }
 
 func (tailwind *Tailwind) urlCSS() string {
 	return fmt.Sprintf("/mono/cdn/tailwind/%s", tailwind.CSS)
+}
+
+func (tailwind *Tailwind) tag(extra ...string) template.HTML {
+	result := fmt.Sprintf(`<link rel="stylesheet" href="%s" %s>`, tailwind.urlCSS(), strings.Join(extra, " "))
+	tailwind.tags[result] = struct{}{}
+	return template.HTML(result)
 }
 
 func removeTemp(path string) error {

@@ -27,7 +27,7 @@ func Nextjs(root string, extensions ...Extension) Static {
 	funcs["ctx"] = func() Context { return Context{Funcs: funcs} }
 
 	result := StaticPage{
-		Subpattern: make(map[string]StaticPage),
+		Subpattern: make(map[string]*StaticPage),
 	}
 	resultLock := sync.Mutex{}
 	wg, errCh, parallelize := newParallelize()
@@ -52,7 +52,7 @@ func Nextjs(root string, extensions ...Extension) Static {
 			if err != nil {
 				return nil, err
 			}
-			result.Subpattern["/favicon.ico"] = StaticPage{
+			result.Subpattern["/favicon.ico"] = &StaticPage{
 				Data:        data,
 				ContentType: http.DetectContentType(data),
 			}
@@ -168,7 +168,7 @@ func nextjsWalk(
 		if err = layout.Execute(&buff, ctx); err != nil {
 			return fmt.Errorf("layout.Execute: %w", err)
 		}
-		page := StaticPage{
+		page := &StaticPage{
 			Data:        buff.Bytes(),
 			ContentType: http.DetectContentType(buff.Bytes()),
 		}
