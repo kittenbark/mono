@@ -37,7 +37,7 @@ func StartForT(t *testing.T, server mono.Server, timeout time.Duration, after ti
 func PrepareTest() (MonoClient, mono.Server) {
 	addr := fmt.Sprintf(":%d", port.Add(1))
 	client := MonoClient{url: fmt.Sprintf("http://localhost%s", addr)}
-	server := mono.Mux().
+	server := mono.New().
 		Addr(addr)
 	return client, server
 }

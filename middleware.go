@@ -12,6 +12,11 @@ import (
 	"time"
 )
 
+const (
+	headerCacheControlDay  = "public, max-age=86400"
+	headerCacheControlWeek = "public, max-age=604800"
+)
+
 type MiddlewareFunc = func(handler HandlerFunc) HandlerFunc
 
 func SaneHeaders(handler HandlerFunc) HandlerFunc {
@@ -29,7 +34,7 @@ func SaneHeaders(handler HandlerFunc) HandlerFunc {
 		} else {
 			// NOTE: this blocks <script src="https://cdn.tailwind.com"/>
 			h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'")
-			h.Set("Cache-Control", "public, max-age=86400")
+			h.Set("Cache-Control", headerCacheControlDay)
 			h.Set("Expires", time.Now().Add(24*time.Hour).Format(http.TimeFormat))
 		}
 

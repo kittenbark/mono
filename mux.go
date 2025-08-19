@@ -36,7 +36,7 @@ var _ Server = (*serverDev)(nil)
 
 type HandlerFunc func(ctx context.Context, rw http.ResponseWriter, req *http.Request) error
 
-func Mux() Server {
+func New() Server {
 	result := &serverDev{}
 	result.init()
 	return result.Middleware(SaneHeaders)
@@ -148,9 +148,9 @@ func (server *serverDev) Static(pattern string, static Static) Server {
 		if page.ContentType != "" {
 			h.Set("Content-Type", page.ContentType)
 		}
-		if strings.HasPrefix(page.ContentType, "text/css") {
-			h.Set("Cache-Control", "public, max-age=604800")
-			h.Set("Expires", time.Now().Add(7*24*time.Hour).Format(http.TimeFormat))
+		if strings.HasPrefix(page.ContentType, "text/css") || strings.HasPrefix(page.ContentType, "image/") || strings.HasPrefix(page.ContentType, "video/") {
+			h.Set("Cache-Control", headerCacheControlWeek)
+			h.Set("Expires", time.Now().Add(time.Hour*24*7).Format(http.TimeFormat))
 		}
 		data := page.Data
 		if gzipData != nil && strings.Contains(req.Header.Get("Accept-Encoding"), "gzip") {

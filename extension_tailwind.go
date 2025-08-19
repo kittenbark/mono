@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -25,8 +26,9 @@ type Tailwind struct {
 	InputCSS string
 	Context  context.Context
 	Timeout  time.Duration
-	Inline   bool
+	NoInline bool
 	tags     map[string]struct{}
+	tagsLock sync.Mutex
 }
 
 func (tailwind *Tailwind) Apply(funcs template.FuncMap) (err error) {
@@ -112,7 +114,7 @@ func (tailwind *Tailwind) SideEffects(result *StaticPage) error {
 		return err
 	}
 
-	if !tailwind.Inline {
+	if tailwind.NoInline {
 		result.Subpattern[tailwind.urlCSS()] = &StaticPage{
 			ContentType: "text/css; charset=utf-8",
 			Data:        dataCSS,
@@ -145,6 +147,8 @@ func (tailwind *Tailwind) urlCSS() string {
 }
 
 func (tailwind *Tailwind) tag(extra ...string) template.HTML {
+	tailwind.tagsLock.Lock()
+	defer tailwind.tagsLock.Unlock()
 	result := fmt.Sprintf(`<link rel="stylesheet" href="%s" %s>`, tailwind.urlCSS(), strings.Join(extra, " "))
 	tailwind.tags[result] = struct{}{}
 	return template.HTML(result)
