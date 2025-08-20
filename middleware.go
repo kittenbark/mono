@@ -26,16 +26,11 @@ func SaneHeaders(handler HandlerFunc) HandlerFunc {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
-
-		if IsLocal() || IsDev() {
-			h.Set("Cache-Control", "no-cache, no-store, must-revalidate")
-			h.Set("Pragma", "no-cache")
-			h.Set("Expires", "0")
-		} else {
+		h.Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		h.Set("Expires", "0")
+		if IsProd() {
 			// NOTE: this blocks <script src="https://cdn.tailwind.com"/>
 			h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'")
-			h.Set("Cache-Control", headerCacheControlDay)
-			h.Set("Expires", time.Now().Add(24*time.Hour).Format(http.TimeFormat))
 		}
 
 		return handler(ctx, rw, req)

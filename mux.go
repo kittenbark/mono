@@ -151,6 +151,9 @@ func (server *serverDev) Static(pattern string, static Static) Server {
 		if strings.HasPrefix(page.ContentType, "text/css") || strings.HasPrefix(page.ContentType, "image/") || strings.HasPrefix(page.ContentType, "video/") {
 			h.Set("Cache-Control", headerCacheControlWeek)
 			h.Set("Expires", time.Now().Add(time.Hour*24*7).Format(http.TimeFormat))
+		} else {
+			h.Set("Cache-Control", headerCacheControlDay)
+			h.Set("Expires", time.Now().Add(time.Hour*24).Format(http.TimeFormat))
 		}
 		data := page.Data
 		if gzipData != nil && strings.Contains(req.Header.Get("Accept-Encoding"), "gzip") {

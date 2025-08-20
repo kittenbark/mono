@@ -70,6 +70,7 @@ const (
 
 func IsLocal() bool { return CurrentEnv == EnvLocal }
 func IsDev() bool   { return CurrentEnv == EnvDev }
+func IsProd() bool  { return CurrentEnv == EnvProd }
 
 var statusMessageCache = [600][]byte{}
 
