@@ -12,13 +12,17 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
 //go:embed extension_tailwind.css
-var Stylesheet string
+var TailwindStylesheet string
+
+//go:embed extension_tailwind.config.js
+var TailwindConfigJs []byte
 
 type Tailwind struct {
 	CLI      string
@@ -26,9 +30,9 @@ type Tailwind struct {
 	InputCSS string
 	Context  context.Context
 	Timeout  time.Duration
-	NoInline bool
 	tags     map[string]struct{}
 	tagsLock sync.Mutex
+	noInline bool
 }
 
 func (tailwind *Tailwind) Apply(funcs template.FuncMap) (err error) {
@@ -48,6 +52,23 @@ func (tailwind *Tailwind) Apply(funcs template.FuncMap) (err error) {
 	}
 
 	funcs["tailwind"] = tailwind.tag
+	funcs["tailwind_theme_button"] = func() template.HTML {
+		return `<button data-slot="button"
+        class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg:not([class*='size-'])]:size-4 shrink-0 [&amp;_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50 group/toggle extend-touch-target size-8"
+        title="Toggle theme"
+        onclick="localStorage.theme = document.documentElement.classList.toggle('dark') ? 'dark' : 'light'"
+>
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4.5">
+        <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+        <path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"></path>
+        <path d="M12 3l0 18"></path>
+        <path d="M12 9l4.65 -4.65"></path>
+        <path d="M12 14.3l7.37 -7.37"></path>
+        <path d="M12 19.6l8.85 -8.85"></path>
+    </svg>
+    <span class="sr-only">Toggle theme</span>
+</button>`
+	}
 	return nil
 }
 
@@ -56,7 +77,7 @@ func (tailwind *Tailwind) SideEffects(result *StaticPage) error {
 		tailwind.CLI = "npx @tailwindcss/cli"
 	}
 	if tailwind.InputCSS == "" {
-		tailwind.InputCSS = Stylesheet
+		tailwind.InputCSS = TailwindStylesheet
 	}
 
 	dir, err := os.MkdirTemp(TempDir, "mono_tailwind_*")
@@ -85,7 +106,7 @@ func (tailwind *Tailwind) SideEffects(result *StaticPage) error {
 		}
 	}
 
-	if err := os.WriteFile(filepath.Join(dir, "tailwind.config.js"), []byte(`module.exports = {content: ["./content/*"], theme: {extend: {}}, plugins: []}`), 0755); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "tailwind.config.js"), TailwindConfigJs, 0755); err != nil {
 		return err
 	}
 
@@ -114,7 +135,7 @@ func (tailwind *Tailwind) SideEffects(result *StaticPage) error {
 		return err
 	}
 
-	if tailwind.NoInline {
+	if tailwind.noInline {
 		result.Subpattern[tailwind.urlCSS()] = &StaticPage{
 			ContentType: "text/css; charset=utf-8",
 			Data:        dataCSS,
@@ -146,12 +167,64 @@ func (tailwind *Tailwind) urlCSS() string {
 	return fmt.Sprintf("/mono/cdn/tailwind/%s", tailwind.CSS)
 }
 
-func (tailwind *Tailwind) tag(extra ...string) template.HTML {
+func (tailwind *Tailwind) tag(args ...string) (res template.HTML, err error) {
 	tailwind.tagsLock.Lock()
 	defer tailwind.tagsLock.Unlock()
-	result := fmt.Sprintf(`<link rel="stylesheet" href="%s" %s>`, tailwind.urlCSS(), strings.Join(extra, " "))
+
+	additional := []string{}
+	var themeScript string
+	for _, arg := range args {
+		field, value, _ := strings.Cut(arg, "=")
+		switch field {
+		case "inline":
+			if inline, err := strconv.ParseBool(value); err == nil {
+				tailwind.noInline = !inline
+			}
+		case "theme":
+			themeScript, err = tailwind.buildThemeScript(value)
+			if err != nil {
+				return "", err
+			}
+		case "exe":
+			tailwind.CLI = strings.TrimSpace(value)
+		default:
+			additional = append(additional, field)
+		}
+	}
+
+	result := fmt.Sprintf(`<link rel="stylesheet" href="%s" %s>`, tailwind.urlCSS(), strings.Join(additional, " "))
 	tailwind.tags[result] = struct{}{}
-	return template.HTML(result)
+	return template.HTML(themeScript + result), nil
+}
+
+func (tailwind *Tailwind) buildThemeScript(value string) (string, error) {
+	const themeScriptTemplate = `<script>
+try {
+    const is_dark = localStorage.theme === 'dark' %s;
+    document.documentElement.classList.toggle('dark', is_dark);
+    if (is_dark) {
+    	document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#09090b');    
+    }
+} catch (_) {}
+</script>
+`
+
+	var themeScript string
+	switch strings.Trim(value, `"`) {
+	case "light":
+		themeScript = fmt.Sprintf(themeScriptTemplate, "")
+	case "dark":
+		themeScript = fmt.Sprintf(themeScriptTemplate, `|| !localStorage.theme`)
+	case "system":
+		themeScript = fmt.Sprintf(themeScriptTemplate,
+			`|| ((!('theme' in localStorage) || localStorage.theme === 'system') && window.matchMedia('(prefers-color-scheme: dark)').matches);`,
+		)
+	case "disable":
+		themeScript = ""
+	default:
+		return "", errors.New(fmt.Sprintf("tailwind: unknown theme tag: %s", value))
+	}
+	return themeScript, nil
 }
 
 func removeTemp(path string) error {
