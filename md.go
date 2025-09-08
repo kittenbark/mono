@@ -89,6 +89,9 @@ var (
 func Markdown(data string) (template.HTML, error) {
 	markdownLock.Lock()
 	defer markdownLock.Unlock()
+	if !strings.HasSuffix(data, "\n") {
+		data += "\n"
+	}
 
 	actions := make([][]MarkdownTagAction, len(data))
 	skip := make([]bool, len(data))

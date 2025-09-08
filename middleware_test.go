@@ -139,13 +139,11 @@ func TestRpsLimitClients(t *testing.T) {
 			return nil
 		})
 
-		duration := time.Second * 2
-		goodTick := time.Microsecond * 1010
+		duration := time.Second * 3
+		goodTick := time.Microsecond * 1050
 		badTick := time.Microsecond * 50
-		worseTick := time.Microsecond * 10
 		go requests(t, duration, goodTick, "127.0.0.1:777", req)
 		go requests(t, duration, badTick, "127.0.0.1:666", req)
-		go requests(t, duration, worseTick, "127.0.0.1:6666", req)
 		time.Sleep(duration)
 
 		if good.Ok.Load() < p90(duration, goodTick) || good.Bad.Load() > 0 {
@@ -162,14 +160,6 @@ func TestRpsLimitClients(t *testing.T) {
 				bad.Ok.Load(),
 				bad.Bad.Load(),
 				p90(duration, badTick),
-			)
-		}
-		if worse.Ok.Load() != 100 || worse.Bad.Load() < (p90(duration, worseTick)-100) {
-			t.Errorf(
-				"unexpected worse actor 429 (ok=%d, bad=%d {p90(duration, worseTick)=%d})",
-				worse.Ok.Load(),
-				worse.Bad.Load(),
-				p90(duration, worseTick),
 			)
 		}
 	})

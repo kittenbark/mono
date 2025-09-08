@@ -144,7 +144,12 @@ func (tailwind *Tailwind) SideEffects(result *StaticPage) error {
 	}
 
 	replaces := []string{}
-	styleTag, err := SchemaApply(`<style>{{.Data}}</style>`, nil, struct{ Data template.CSS }{template.CSS(dataCSS)})
+	styleTag, err := SchemaApply(
+		`<style>{{.Data}}</style>`,
+		fmt.Sprintf("tailwind%s", tailwind.urlCSS()),
+		nil,
+		struct{ Data template.CSS }{template.CSS(dataCSS)},
+	)
 	if err != nil {
 		return err
 	}

@@ -175,7 +175,7 @@ func nextjsWalk(
 
 		resultLock.Lock()
 		defer resultLock.Unlock()
-		result.Subpattern[path] = page
+		result.Subpattern[strings.TrimRight(path, "/")+"/"] = page
 		return nil
 	}
 }
@@ -187,7 +187,7 @@ func nextJsWalkSpecials[T any](subdir fs.FS, funcs template.FuncMap, ctx T) map[
 			if err != nil {
 				return "", err
 			}
-			return SchemaApply(string(schema), funcs, ctx)
+			return SchemaApply(string(schema), filename, funcs, ctx)
 		},
 		"index.md": func(filename string) (template.HTML, error) {
 			data, err := fs.ReadFile(subdir, filename)
@@ -221,11 +221,7 @@ func dirLayout(dir fs.FS, funcs template.FuncMap, path string) (*template.Templa
 	if err != nil {
 		return nil, err
 	}
-	return Schema(schema, funcs, path)
-}
-
-func directory[T any](dir string, mapped map[string]func(filename string) (T, error)) (T, error) {
-	return directoryFS(os.DirFS(dir), mapped)
+	return Schema(schema, path, funcs)
 }
 
 func directoryFS[T any](dir fs.FS, mapped map[string]func(filename string) (T, error)) (T, error) {

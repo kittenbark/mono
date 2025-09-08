@@ -106,14 +106,14 @@ func TestDev_File(t *testing.T) {
 
 	cl, server := PrepareTest()
 	server.
-		Handler("/single", mono.File("./testdata/test_hello.html")).
-		Handler("/single_2", mono.FileLazy("./testdata/test_hello.html")).
-		Static("/static", mono.FileHtml("./testdata/test_hello.html")).
-		Handler("/lazy", mono.Lazy(mono.FileHtml("./testdata/test_hello.html")))
+		Handler("/single", mono.File("./testdata/mux/test_hello.html")).
+		Handler("/single_2", mono.FileLazy("./testdata/mux/test_hello.html")).
+		Static("/static", mono.FileHtml("./testdata/mux/test_hello.html")).
+		Handler("/lazy", mono.Lazy(mono.FileHtml("./testdata/mux/test_hello.html")))
 	StartForT(t, server, time.Millisecond*10, time.Millisecond*100)
 
 	for _, link := range []string{"/single", "/single_2", "/static", "/lazy"} {
-		if expected, actual := ReadFile(t, "./testdata/test_hello.html"), cl.Get(t, link); !bytes.Equal(expected, actual) {
+		if expected, actual := ReadFile(t, "./testdata/mux/test_hello.html"), cl.Get(t, link); !bytes.Equal(expected, actual) {
 			t.Fatalf(`%s: expected "%s" got "%s"`, link, expected, actual)
 		}
 	}
