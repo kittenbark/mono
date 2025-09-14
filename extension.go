@@ -3,6 +3,7 @@ package mono
 import (
 	"fmt"
 	"html/template"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ var (
 	_ Extension = (*FuncMap)(nil)
 	_ Extension = (*Tailwind)(nil)
 	_ Extension = (*extensionFile)(nil)
+	_ Extension = (NextjsEnv)(nil)
 )
 
 type FuncMap template.FuncMap
@@ -30,6 +32,15 @@ func (mp FuncMap) Apply(funcs template.FuncMap) error {
 }
 
 func (mp FuncMap) SideEffects(result *StaticPage) error { return nil }
+
+type NextjsEnv map[string]string
+
+func (n NextjsEnv) Apply(funcs template.FuncMap) error {
+	funcs["_mono_env_map"] = func() map[string]string { return maps.Clone(n) }
+	return nil
+}
+
+func (n NextjsEnv) SideEffects(result *StaticPage) error { return nil }
 
 type extensionFile struct {
 	mutex     sync.Mutex

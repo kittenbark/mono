@@ -3,7 +3,9 @@ package mono_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/kittenbark/mono"
+	"html/template"
 	"net/http"
 	"os"
 	"strings"
@@ -44,7 +46,10 @@ func TestConsistency(t *testing.T) {
 		}()).
 		Static("/nextjs", mono.Nextjs("./testdata/consistency/source",
 			mono.FuncMap{
-				"component_value":        func() string { return "component_value" },
+				"component_value": func() string { return "component_value" },
+				"component_env": func(env template.HTML) template.HTML {
+					return template.HTML(fmt.Sprintf(`env="%s"`, env))
+				},
 				"component_with_context": func(ctx mono.Context) string { return ctx.Url },
 				"component_file": func(path string) (string, error) {
 					data, err := os.ReadFile(path)
@@ -74,21 +79,21 @@ func TestConsistency(t *testing.T) {
 
 	check(
 		"/nextjs",
-		"<html lang=\"en\">\n<head><title>Test</title></head>\n<body>\ncomponent_value\n/\nroot\n</body>\n</html>",
+		"<html lang=\"en\">\n<head><title>Test</title></head>\n<body>\ncomponent_value\nenv=\"default_value\"\n/\nroot\n</body>\n</html>",
 	)
 
 	check(
 		"/nextjs/alt",
-		"<html lang=\"en\">\n<head><title>Test</title></head>\n<body>\ncomponent_value\n/alt\nalt\n\n</body>\n</html>",
+		"<html lang=\"en\">\n<head><title>Test</title></head>\n<body>\ncomponent_value\nenv=\"alt_value\"\n/alt\nalt\n\n</body>\n</html>",
 	)
 
 	check(
 		"/nextjs/sub",
-		"<html lang=\"en\">\n<head><title>Test</title></head>\n<body>\ncomponent_value\n/sub\n<div>\n<h1 class=\"scroll-m-20 text-center text-4xl font-extrabold tracking-tight text-balance mt-6 first:mt-0\">sub</h1>\n\n</div>\n</body>\n</html>",
+		"<html lang=\"en\">\n<head><title>Test</title></head>\n<body>\ncomponent_value\nenv=\"default_value\"\n/sub\n<div>\n<h1 class=\"scroll-m-20 text-center text-4xl font-extrabold tracking-tight text-balance mt-6 first:mt-0\">sub</h1>\n\n</div>\n</body>\n</html>",
 	)
 
 	check(
 		"/nextjs/sub/subsub",
-		"<html lang=\"en\">\n<head><title>Test</title></head>\n<body>\ncomponent_value\n/sub/subsub\nsubsub\n</body>\n</html>",
+		"<html lang=\"en\">\n<head><title>Test</title></head>\n<body>\ncomponent_value\nenv=\"default_value\"\n/sub/subsub\nsubsub\n</body>\n</html>",
 	)
 }

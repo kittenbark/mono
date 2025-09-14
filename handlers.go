@@ -8,15 +8,44 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"runtime"
+	"slices"
+	"sync"
 )
 
 type Context struct {
 	Url      string
 	Filename string
 	Funcs    template.FuncMap
+	Env      map[string]string
+}
+
+func (ctx *Context) Clone() *Context {
+	return &Context{
+		Url:      ctx.Url,
+		Filename: ctx.Filename,
+		Funcs:    maps.Clone(ctx.Funcs),
+		Env:      maps.Clone(ctx.Env),
+	}
+}
+
+func (ctx *Context) asFunc() func() Context {
+	return func() Context { return *ctx }
+}
+
+func (ctx *Context) funcSetEnv() func(keyValues ...string) string {
+	lock := sync.Mutex{}
+	return func(keyValues ...string) string {
+		lock.Lock()
+		defer lock.Unlock()
+		for keyValue := range slices.Chunk(keyValues, 2) {
+			ctx.Env[keyValue[0]] = keyValue[1]
+		}
+		return ""
+	}
 }
 
 func File(filename string, contentType ...string) HandlerFunc {

@@ -29,10 +29,10 @@ func SchemaApply(schema string, name string, funcs template.FuncMap, data any) (
 	return ExecuteSchema(templ, data)
 }
 
-func SchemaFile(filename string, funcs template.FuncMap, data any) (template.HTML, error) {
+func SchemaFileApply(filename string, funcs template.FuncMap, data any) (template.HTML, error) {
 	schema, err := os.ReadFile(filename)
 	if err != nil {
-		return "", fmt.Errorf("mono.SchemaFile failed to read file %s: %w", filename, err)
+		return "", fmt.Errorf("mono.SchemaFileApply failed to read file %s: %w", filename, err)
 	}
 	return SchemaApply(string(schema), filename, funcs, data)
 }
