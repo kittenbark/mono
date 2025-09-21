@@ -18,21 +18,52 @@ import (
 	"time"
 )
 
-//go:embed extension_tailwind.css
-var TailwindStylesheet string
+var (
+	//go:embed extension_tailwind.css
+	DefaultTailwindStylesheet string
+	//go:embed extension_tailwind.config.js
+	DefaultTailwindConfigJs    string
+	DefaultTailwindThemeButton template.HTML = `<button data-slot="button"
+        class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg:not([class*='size-'])]:size-4 shrink-0 [&amp;_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50 group/toggle extend-touch-target size-8"
+        title="Toggle theme"
+        onclick="localStorage.theme = document.documentElement.classList.toggle('dark') ? 'dark' : 'light'"
+>
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4.5">
+        <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+        <path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"></path>
+        <path d="M12 3l0 18"></path>
+        <path d="M12 9l4.65 -4.65"></path>
+        <path d="M12 14.3l7.37 -7.37"></path>
+        <path d="M12 19.6l8.85 -8.85"></path>
+    </svg>
+    <span class="sr-only">Toggle theme</span>
+</button>`
+)
 
-//go:embed extension_tailwind.config.js
-var TailwindConfigJs []byte
-
+// Tailwind — wrapper around tailwind-cli (https://tailwindcss.com/docs/installation/tailwind-cli),
+// which is run as a child process, usually it's fast (<1s). We try to use the same stylesheet between all pages.
+// input.css could be set as Tailwind.InputCSS, if nothing is specified DefaultTailwindStylesheet is used.
+// tailwind.config.js  could be set as Tailwind.InputCSS, if nothing is specified DefaultTailwindConfigJs is used.
+//
+// Flags supported:
+//   - "exe" "./your_path_to_binary_here", default: "npx @tailwindcss/cli"
+//   - "inline" "true"/"false", default: "true"
+//   - "theme" "light"/"dark"/"system", default: "system"
+//
+// Examples:
+// 1. <head> ... {{tailwind}} ... </head>
+// 2. <head> ... {{tailwind "theme" "dark"}} ... </head>
 type Tailwind struct {
+	// default: npx @tailwindcss/cli
 	CLI      string
 	CSS      string
 	InputCSS string
+	ConfigJS string
 	Context  context.Context
 	Timeout  time.Duration
+	noInline bool
 	tags     map[string]struct{}
 	tagsLock sync.Mutex
-	noInline bool
 }
 
 func (tailwind *Tailwind) Apply(funcs template.FuncMap) (err error) {
@@ -52,23 +83,7 @@ func (tailwind *Tailwind) Apply(funcs template.FuncMap) (err error) {
 	}
 
 	funcs["tailwind"] = tailwind.tag
-	funcs["tailwind_theme_button"] = func() template.HTML {
-		return `<button data-slot="button"
-        class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg:not([class*='size-'])]:size-4 shrink-0 [&amp;_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50 group/toggle extend-touch-target size-8"
-        title="Toggle theme"
-        onclick="localStorage.theme = document.documentElement.classList.toggle('dark') ? 'dark' : 'light'"
->
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4.5">
-        <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-        <path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"></path>
-        <path d="M12 3l0 18"></path>
-        <path d="M12 9l4.65 -4.65"></path>
-        <path d="M12 14.3l7.37 -7.37"></path>
-        <path d="M12 19.6l8.85 -8.85"></path>
-    </svg>
-    <span class="sr-only">Toggle theme</span>
-</button>`
-	}
+	funcs["tailwind_theme_button"] = func() template.HTML { return DefaultTailwindThemeButton }
 	return nil
 }
 
@@ -77,7 +92,10 @@ func (tailwind *Tailwind) SideEffects(result *StaticPage) error {
 		tailwind.CLI = "npx @tailwindcss/cli"
 	}
 	if tailwind.InputCSS == "" {
-		tailwind.InputCSS = TailwindStylesheet
+		tailwind.InputCSS = DefaultTailwindStylesheet
+	}
+	if tailwind.ConfigJS == "" {
+		tailwind.ConfigJS = DefaultTailwindConfigJs
 	}
 
 	dir, err := os.MkdirTemp(TempDir, "mono_tailwind_*")
@@ -106,7 +124,7 @@ func (tailwind *Tailwind) SideEffects(result *StaticPage) error {
 		}
 	}
 
-	if err := os.WriteFile(filepath.Join(dir, "tailwind.config.js"), TailwindConfigJs, 0755); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "tailwind.config.js"), []byte(tailwind.ConfigJS), 0755); err != nil {
 		return err
 	}
 
