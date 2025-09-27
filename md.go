@@ -21,15 +21,16 @@ var (
 						if from == to {
 							return ""
 						}
-						return data[from+1 : to]
+						return template.HTML(template.HTMLEscapeString(string(data)[from+1 : to]))
 					}}).
 					Parse(`<div class="bg-muted relative rounded mt-5 first:mt-0 w-full max-w-full"><pre class="font-mono text-xs sm:text-sm p-2 sm:p-4 overflow-x-auto whitespace-pre-wrap break-words"><code>{{transform .Children}}</code></pre></div>`),
 				),
 			},
 		},
+		// TODO: sanitize `<script> console.log("example") </script>`
 		&MarkdownGenericTag{
 			Triggers:  []string{"`"},
-			Insertion: []string{`<code class="bg-muted relative rounded px-[0.3rem] py-[0.2rem] font-mono text-sm font-semibold">`, "</code>"},
+			Insertion: []string{`<code class="bg-muted relative rounded px-[0.3rem] py-[0.2rem] font-mono font-semibold">`, "</code>"},
 		},
 		&MarkdownGenericTag{
 			Triggers:        []string{"#### "},
@@ -122,6 +123,7 @@ type MarkdownTagAction struct {
 	Transformation *template.Template
 	Range          []int
 	IsNewBlock     bool
+	Sanitize       bool
 }
 
 type MarkdownTag interface {
@@ -349,7 +351,7 @@ func markdownApplyTags(data string, skip []bool, actions [][]MarkdownTagAction, 
 					Insertion: string(transformed),
 				})
 			}
-			if isNewlineBased && from < to {
+			if isNewlineBased {
 				for i := from; i < to; i++ {
 					paragraphs[i] = true
 				}
