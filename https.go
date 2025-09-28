@@ -101,7 +101,7 @@ func domainsWithWWW(domains []string) []string {
 	for _, domain := range domains {
 		result = append(result, domain)
 		if !strings.HasPrefix(domain, "www.") {
-			result = append(result, domain)
+			result = append(result, "www."+domain)
 		}
 	}
 	return result
