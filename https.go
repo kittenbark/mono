@@ -10,6 +10,7 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 	"math/big"
 	"net"
+	"strings"
 	"time"
 )
 
@@ -35,7 +36,7 @@ func TLS(domains ...string) (*tls.Config, error) {
 	manager := &autocert.Manager{
 		Cache:      autocert.DirCache(TLSOptions.CacheDir),
 		Prompt:     autocert.AcceptTOS,
-		HostPolicy: autocert.HostWhitelist(domains...),
+		HostPolicy: autocert.HostWhitelist(domainsWithWWW(domains)...),
 		Email:      TLSOptions.Email,
 	}
 
@@ -94,3 +95,14 @@ type cursedTLSDataAsError struct {
 }
 
 func (data *cursedTLSDataAsError) Error() string { return "this not a real error (its cursed)" }
+
+func domainsWithWWW(domains []string) []string {
+	result := make([]string, 0, len(domains))
+	for _, domain := range domains {
+		result = append(result, domain)
+		if !strings.HasPrefix(domain, "www.") {
+			result = append(result, domain)
+		}
+	}
+	return result
+}
