@@ -23,6 +23,7 @@ import (
 type Server interface {
 	Static(pattern string, static Static) Server
 	Handler(pattern string, fn HandlerFunc) Server
+	WithBuildError(err error) Server
 	Middleware(fn MiddlewareFunc) Server
 	Proxy(source, destination string) Server
 	Stats() Server
@@ -165,6 +166,11 @@ func (server *serverDev) Static(pattern string, static Static) Server {
 		}
 		return nil
 	})
+}
+
+func (server *serverDev) WithBuildError(err error) Server {
+	server.buildError = errors.Join(server.buildError, err)
+	return server
 }
 
 func (server *serverDev) Addr(addr string) Server {
