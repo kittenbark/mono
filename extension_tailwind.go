@@ -87,7 +87,7 @@ func (tailwind *Tailwind) Apply(funcs template.FuncMap) (err error) {
 	return nil
 }
 
-func (tailwind *Tailwind) SideEffects(result *StaticPage) error {
+func (tailwind *Tailwind) SideEffects(result *BuiltPage) error {
 	if tailwind.CLI == "" {
 		tailwind.CLI = "npx @tailwindcss/cli"
 	}
@@ -154,7 +154,7 @@ func (tailwind *Tailwind) SideEffects(result *StaticPage) error {
 	}
 
 	if tailwind.noInline {
-		result.Subpattern[tailwind.urlCSS()] = &StaticPage{
+		result.Subpattern[tailwind.urlCSS()] = &BuiltPage{
 			ContentType: "text/css; charset=utf-8",
 			Data:        dataCSS,
 		}

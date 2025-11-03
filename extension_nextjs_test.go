@@ -44,7 +44,7 @@ func TestConsistency(t *testing.T) {
 				return nil
 			}
 		}()).
-		Static("/nextjs", mono.Nextjs("./testdata/consistency/source",
+		Page("/nextjs", mono.Nextjs("./testdata/consistency/source",
 			mono.FuncMap{
 				"component_value": func() string { return "component_value" },
 				"component_env": func(env template.HTML) template.HTML {

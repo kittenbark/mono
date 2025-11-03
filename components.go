@@ -15,14 +15,17 @@ func ExecuteSchema(templ *template.Template, data any) (template.HTML, error) {
 	return template.HTML(buff.String()), nil
 }
 
-func Schema(schema string, name string, funcs template.FuncMap) (*template.Template, error) {
-	return template.New(name).
-		Funcs(funcs).
-		Parse(schema)
+func Schema(schema string, name string, funcs template.FuncMap, delims ...string) (*template.Template, error) {
+	result := template.New(name).
+		Funcs(funcs)
+	if len(delims) == 2 {
+		result.Delims(delims[0], delims[1])
+	}
+	return result.Parse(schema)
 }
 
-func SchemaApply(schema string, name string, funcs template.FuncMap, data any) (template.HTML, error) {
-	templ, err := Schema(schema, name, funcs)
+func SchemaApply(schema string, name string, funcs template.FuncMap, data any, delims ...string) (template.HTML, error) {
+	templ, err := Schema(schema, name, funcs, delims...)
 	if err != nil {
 		return "", fmt.Errorf("mono.Schema failed to parse schema: %w", err)
 	}

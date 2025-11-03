@@ -108,7 +108,7 @@ func TestDev_File(t *testing.T) {
 	server.
 		Handler("/single", mono.File("./testdata/mux/test_hello.html")).
 		Handler("/single_2", mono.FileLazy("./testdata/mux/test_hello.html")).
-		Static("/static", mono.FileHtml("./testdata/mux/test_hello.html")).
+		Page("/static", mono.FileHtml("./testdata/mux/test_hello.html")).
 		Handler("/lazy", mono.Lazy(mono.FileHtml("./testdata/mux/test_hello.html")))
 	StartForT(t, server, time.Millisecond*10, time.Millisecond*100)
 

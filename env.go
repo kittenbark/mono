@@ -3,10 +3,12 @@ package mono
 import (
 	"bufio"
 	"fmt"
+	"html/template"
 	"log/slog"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 var (
@@ -30,6 +32,10 @@ var (
 		"img":   `<img src="%s" alt="%s">`,
 		"video": `<video src="%s" alt="%s" preload="metadata" loop autoplay muted controls>Does you browser support videos?</video>`,
 		"audio": `<audio src="%s" alt="%s" onloadedmetadata="this.volume=0.25" controls>Does your Linux support audio?</audio>`,
+	}
+
+	DefaultPageDynamicFuncs = template.FuncMap{
+		"mono_time": func() string { return time.Now().String() },
 	}
 )
 

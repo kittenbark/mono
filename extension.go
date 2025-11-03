@@ -7,12 +7,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
 type Extension interface {
 	Apply(funcs template.FuncMap) error
-	SideEffects(result *StaticPage) error
+	SideEffects(result *BuiltPage) error
 }
 
 var (
@@ -31,7 +32,7 @@ func (mp FuncMap) Apply(funcs template.FuncMap) error {
 	return nil
 }
 
-func (mp FuncMap) SideEffects(result *StaticPage) error { return nil }
+func (mp FuncMap) SideEffects(result *BuiltPage) error { return nil }
 
 type NextjsEnv map[string]string
 
@@ -40,7 +41,23 @@ func (n NextjsEnv) Apply(funcs template.FuncMap) error {
 	return nil
 }
 
-func (n NextjsEnv) SideEffects(result *StaticPage) error { return nil }
+func (n NextjsEnv) SideEffects(result *BuiltPage) error { return nil }
+
+type extensionDynamicPages struct{}
+
+func (e extensionDynamicPages) Apply(funcs template.FuncMap) error { return nil }
+
+func (e extensionDynamicPages) SideEffects(result *BuiltPage) error {
+	if data := string(result.Data); strings.HasPrefix(http.DetectContentType(result.Data), "text/") && strings.Contains(data, "{${") && strings.Contains(data, "}$}") {
+		result.Dynamic = true
+	}
+	for _, sub := range result.Subpattern {
+		_ = e.SideEffects(sub)
+	}
+	return nil
+}
+
+var _ Extension = &extensionDynamicPages{}
 
 type extensionFile struct {
 	mutex     sync.Mutex
@@ -104,7 +121,7 @@ func (extension *extensionFile) Apply(funcs template.FuncMap) error {
 	return nil
 }
 
-func (extension *extensionFile) SideEffects(result *StaticPage) error {
+func (extension *extensionFile) SideEffects(result *BuiltPage) error {
 	extension.mutex.Lock()
 	defer extension.mutex.Unlock()
 
@@ -125,7 +142,7 @@ func (extension *extensionFile) SideEffects(result *StaticPage) error {
 			return err
 		}
 		url, _ := extension.url(filename)
-		result.Subpattern[url] = &StaticPage{
+		result.Subpattern[url] = &BuiltPage{
 			ContentType: http.DetectContentType(data),
 			Data:        data,
 		}

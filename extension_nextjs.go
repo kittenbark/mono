@@ -108,9 +108,9 @@ var ConfigNextjsSpecialFiles = []nextjsContextSpecialFile{
 	},
 }
 
-func Nextjs(root string, extensions ...Extension) Static {
-	static, err := func() (static Static, err error) {
-		extensions = append(extensions, newExtensionFile())
+func Nextjs(root string, extensions ...Extension) Page {
+	page, err := func() (page Page, err error) {
+		extensions = append(extensions, newExtensionFile(), &extensionDynamicPages{})
 
 		baseContext, err := newNextjsContext(root)
 		if err != nil {
@@ -134,7 +134,7 @@ func Nextjs(root string, extensions ...Extension) Static {
 	if err != nil {
 		return staticError(err)
 	}
-	return static
+	return page
 }
 
 func newNextjsContext(root string) (*nextjsContext, error) {
@@ -145,8 +145,8 @@ func newNextjsContext(root string) (*nextjsContext, error) {
 		},
 		root: root,
 		dir:  os.DirFS(root),
-		result: &StaticPage{
-			Subpattern: make(map[string]*StaticPage),
+		result: &BuiltPage{
+			Subpattern: make(map[string]*BuiltPage),
 		},
 		resultLock:   &sync.Mutex{},
 		specialFiles: ConfigNextjsSpecialFiles,
@@ -161,7 +161,7 @@ type nextjsContextSpecialFile struct {
 
 type nextjsContext struct {
 	*Context
-	result       *StaticPage
+	result       *BuiltPage
 	resultLock   *sync.Mutex
 	layoutSchema string
 	specialFiles []nextjsContextSpecialFile
@@ -181,7 +181,7 @@ func (ctx *nextjsContext) Page(name string, data []byte, contentType ...string) 
 
 	ctx.resultLock.Lock()
 	defer ctx.resultLock.Unlock()
-	ctx.result.Subpattern[name] = &StaticPage{
+	ctx.result.Subpattern[name] = &BuiltPage{
 		Data:        data,
 		ContentType: ct,
 	}
@@ -312,7 +312,7 @@ func extensionApply(extension Extension, funcs template.FuncMap) (err error) {
 	return extension.Apply(funcs)
 }
 
-func extensionSideEffects(extension Extension, result *StaticPage) (err error) {
+func extensionSideEffects(extension Extension, result *BuiltPage) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = errors.Join(err, fmt.Errorf("panic: %v", r))

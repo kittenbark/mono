@@ -87,25 +87,34 @@ func FileLazy(filename string, contentType ...string) HandlerFunc {
 
 const contentTypeHTML = "text/html; charset=utf-8"
 
-type Static interface {
-	Apply(ctx *Context) (StaticPage, error)
+type Page interface {
+	Apply(ctx *Context) (BuiltPage, error)
+	IsDynamic() bool
 }
 
-func (page StaticPage) Apply(ctx *Context) (StaticPage, error) { return page, nil }
+type StaticFunc func(ctx *Context) (BuiltPage, error)
 
-type StaticFunc func(ctx *Context) (StaticPage, error)
+func (fn StaticFunc) Apply(ctx *Context) (BuiltPage, error) { return fn(ctx) }
 
-func (fn StaticFunc) Apply(ctx *Context) (StaticPage, error) { return fn(ctx) }
+func (fn StaticFunc) IsDynamic() bool { return false }
 
-type StaticPage struct {
+type BuiltPage struct {
 	Data        []byte
 	ContentType string
-	Subpattern  map[string]*StaticPage
+	Subpattern  map[string]*BuiltPage
+
+	Dynamic      bool
+	DynamicFuncs template.FuncMap
+	DynamicData  func(ctx context.Context, req *http.Request) any
 }
 
-func Lazy(static Static) HandlerFunc {
+func (page BuiltPage) Apply(ctx *Context) (BuiltPage, error) { return page, nil }
+
+func (page BuiltPage) IsDynamic() bool { return page.Dynamic }
+
+func Lazy(page Page) HandlerFunc {
 	return func(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
-		data, err := static.Apply(&Context{Url: req.URL.Path})
+		data, err := page.Apply(&Context{Url: req.URL.Path})
 		if err != nil {
 			return fmt.Errorf("lazy: %w", err)
 		}
@@ -119,16 +128,16 @@ func Lazy(static Static) HandlerFunc {
 	}
 }
 
-func Html(code template.HTML) Static {
-	return StaticFunc(func(ctx *Context) (StaticPage, error) {
-		return StaticPage{
+func Html(code template.HTML) Page {
+	return StaticFunc(func(ctx *Context) (BuiltPage, error) {
+		return BuiltPage{
 			Data:        []byte(code),
 			ContentType: contentTypeHTML,
 		}, nil
 	})
 }
 
-func FileHtml(filename string) Static {
+func FileHtml(filename string) Page {
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return staticError(err)
@@ -136,13 +145,13 @@ func FileHtml(filename string) Static {
 	return Html(template.HTML(data))
 }
 
-func FileMedia(filename string) Static {
+func FileMedia(filename string) Page {
 	data, err := os.ReadFile(filename)
 	if err != nil {
-		return StaticFunc(func(ctx *Context) (StaticPage, error) { return StaticPage{}, err })
+		return StaticFunc(func(ctx *Context) (BuiltPage, error) { return BuiltPage{}, err })
 	}
-	return StaticFunc(func(ctx *Context) (StaticPage, error) {
-		return StaticPage{
+	return StaticFunc(func(ctx *Context) (BuiltPage, error) {
+		return BuiltPage{
 			Data:        data,
 			ContentType: http.DetectContentType(data),
 		}, nil
@@ -150,7 +159,7 @@ func FileMedia(filename string) Static {
 	)
 }
 
-func staticError(err error) Static {
+func staticError(err error) Page {
 	trace := []string{}
 	for i := range 10 {
 		_, file, line, ok := runtime.Caller(i + 1)
@@ -159,15 +168,15 @@ func staticError(err error) Static {
 		}
 		trace = append(trace, fmt.Sprintf("%d. %s:%d", i+1, file, line))
 	}
-	Log.Error("mono: static error", "err", err, "trace", trace)
+	Log.Error("mono: page error", "err", err, "trace", trace)
 
-	return StaticFunc(func(ctx *Context) (StaticPage, error) {
-		return StaticPage{}, err
+	return StaticFunc(func(ctx *Context) (BuiltPage, error) {
+		return BuiltPage{}, err
 	})
 }
 
-func staticPage(page StaticPage) Static {
-	return StaticFunc(func(ctx *Context) (StaticPage, error) { return page, nil })
+func staticPage(page BuiltPage) Page {
+	return StaticFunc(func(ctx *Context) (BuiltPage, error) { return page, nil })
 }
 
 func def[T any](value []T, otherwise T) T {

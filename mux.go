@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"golang.org/x/crypto/acme/autocert"
+	"html/template"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -21,7 +22,7 @@ import (
 )
 
 type Server interface {
-	Static(pattern string, static Static) Server
+	Page(pattern string, page Page) Server
 	Handler(pattern string, fn HandlerFunc) Server
 	WithBuildError(err error) Server
 	Middleware(fn MiddlewareFunc) Server
@@ -62,7 +63,7 @@ type serverDev struct {
 func (server *serverDev) Proxy(source, destination string) Server {
 	dest, err := url.Parse(destination)
 	if err != nil {
-		return server.error(err)
+		return server.WithBuildError(err)
 	}
 	proxy := httputil.NewSingleHostReverseProxy(dest)
 	director := proxy.Director
@@ -105,43 +106,66 @@ func (server *serverDev) Handler(pattern string, fn HandlerFunc) Server {
 	return server
 }
 
-func (server *serverDev) Static(pattern string, static Static) Server {
-	page, err := static.Apply(&Context{Url: pattern})
+func (server *serverDev) Page(pattern string, pageBuilder Page) Server {
+	page, err := pageBuilder.Apply(&Context{Url: pattern})
 	if err != nil {
-		return server.error(err)
+		return server.WithBuildError(err)
 	}
 
 	for subpattern, subdata := range page.Subpattern {
 		patternJoined, err := url.JoinPath(pattern, subpattern)
 		if err != nil {
-			return server.error(err)
+			return server.WithBuildError(err)
 		}
-		server.Static(patternJoined, subdata)
+		server.Page(patternJoined, subdata)
 	}
 	if len(page.Data) == 0 {
 		return server
 	}
 
-	// Note: this section might be CPU intensive, could be a good place for parallelization.
-	var gzipData []byte
-	if strings.HasPrefix(page.ContentType, "text/") {
-		gzipResult := bytes.NewBuffer(nil)
-		gzipCompressor, _ := gzip.NewWriterLevel(gzipResult, gzip.BestCompression)
-		if _, err := gzipCompressor.Write(page.Data); err != nil {
-			server.buildError = errors.Join(server.buildError, err)
+	if page.DynamicFuncs != nil {
+		for fnName, fn := range DefaultPageDynamicFuncs {
+			if _, ok := page.DynamicFuncs[fnName]; !ok {
+				page.DynamicFuncs[fnName] = fn
+			}
 		}
-		if err := gzipCompressor.Close(); err != nil {
-			server.buildError = errors.Join(server.buildError, err)
-		}
-		gzipData = gzipResult.Bytes()
+	} else {
+		page.DynamicFuncs = DefaultPageDynamicFuncs
 	}
-	defer func() {
-		// Note: this is a hack — server.Handler sets handlers[pattern]=dynamic, we override it as static.
-		if gzipData == nil {
-			server.handlersMap[pattern] = fmt.Sprintf("static [%s] (%s)", sizeof(page.Data), page.ContentType)
-		} else {
-			server.handlersMap[pattern] = fmt.Sprintf("static [%s (%s)] (%s)", sizeof(gzipData), sizeof(page.Data), page.ContentType)
+	if page.DynamicData == nil {
+		type DynamicData struct {
+			Context context.Context
+			Request *http.Request
 		}
+		page.DynamicData = func(ctx context.Context, req *http.Request) any {
+			return DynamicData{
+				Context: ctx,
+				Request: req,
+			}
+		}
+	}
+
+	var dynTemplate *template.Template
+	if page.IsDynamic() {
+		dynTemplate, err = Schema(string(page.Data), pattern, page.DynamicFuncs, "{${", "}$}")
+		if err != nil {
+			return server.WithBuildError(err)
+		}
+	}
+
+	// Note: this section might be CPU intensive, could be a good place for parallelization.
+	gzipStaticData := server.gzipIfPossible(page, gzip.BestCompression)
+	defer func() {
+		type_ := "static_page"
+		if dynTemplate != nil {
+			type_ = "dynamic_page"
+		}
+		size := fmt.Sprintf("[%s]", sizeof(page.Data))
+		if gzipStaticData != nil {
+			size = fmt.Sprintf(" [%s (%s)]", sizeof(gzipStaticData), sizeof(gzipStaticData))
+		}
+		// Note: this is a hack — server.Handler sets handlers[pattern]=dynamic, we override it as static.
+		server.handlersMap[pattern] = fmt.Sprintf("%s %s (%s)", type_, size, page.ContentType)
 	}()
 
 	return server.Handler(pattern, func(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
@@ -157,10 +181,23 @@ func (server *serverDev) Static(pattern string, static Static) Server {
 			h.Set("Expires", time.Now().Add(time.Hour*24).Format(http.TimeFormat))
 		}
 		data := page.Data
-		if gzipData != nil && strings.Contains(req.Header.Get("Accept-Encoding"), "gzip") {
-			data = gzipData
-			h.Set("Content-Encoding", "gzip")
+
+		// TODO: support gzip here?
+		if dynTemplate != nil {
+			built, err := ExecuteSchema(dynTemplate, page.DynamicData(ctx, req))
+			if err != nil {
+				return err
+			}
+			data = []byte(built)
 		}
+
+		if strings.Contains(req.Header.Get("Accept-Encoding"), "gzip") {
+			if gzipStaticData != nil {
+				data = gzipStaticData
+				h.Set("Content-Encoding", "gzip")
+			}
+		}
+
 		if _, err := rw.Write(data); err != nil {
 			return err
 		}
@@ -168,9 +205,23 @@ func (server *serverDev) Static(pattern string, static Static) Server {
 	})
 }
 
-func (server *serverDev) WithBuildError(err error) Server {
-	server.buildError = errors.Join(server.buildError, err)
-	return server
+func (server *serverDev) gzipIfPossible(page BuiltPage, compression int) (dataOpt []byte) {
+	if !strings.HasPrefix(page.ContentType, "text/") || page.IsDynamic() {
+		return nil
+	}
+
+	result := bytes.NewBuffer(nil)
+	compressor, err := gzip.NewWriterLevel(result, compression)
+	if err != nil {
+		server.buildError = errors.Join(server.buildError, err)
+	}
+	if _, err := compressor.Write(page.Data); err != nil {
+		server.buildError = errors.Join(server.buildError, err)
+	}
+	if err := compressor.Close(); err != nil {
+		server.buildError = errors.Join(server.buildError, err)
+	}
+	return result.Bytes()
 }
 
 func (server *serverDev) Addr(addr string) Server {
@@ -208,7 +259,7 @@ func (server *serverDev) TLS(cfg *tls.Config, err error) Server {
 		data, ok := err.(*cursedTLSDataAsError)
 		Log.Debug("mono.TLS: setting server.cert", "cfg", cfg != nil, "cert", ok)
 		if !ok {
-			return server.error(err)
+			return server.WithBuildError(err)
 		}
 		server.cert = data.manager
 	}
@@ -266,7 +317,7 @@ func (server *serverDev) Stop() {
 	_ = server.internal.Shutdown(server.ctx)
 }
 
-func (server *serverDev) error(err error) Server {
+func (server *serverDev) WithBuildError(err error) Server {
 	if err != nil {
 		server.buildError = errors.Join(server.buildError, buildError(err, 1))
 	}
@@ -304,7 +355,7 @@ func (server *serverDev) robotsTxt() {
 	const schema = `User-agent: *
 Allow: /
 Disallow: /mono/cdn/*`
-	server.Static("/robots.txt", StaticPage{Data: []byte(schema), ContentType: "text/plain"})
+	server.Page("/robots.txt", BuiltPage{Data: []byte(schema), ContentType: "text/plain"})
 }
 
 var sizeofSuffix = []string{"b", "kb", "mb", "gb", "tb", "pb"}
