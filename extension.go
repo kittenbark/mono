@@ -44,10 +44,12 @@ func (n NextjsEnv) Apply(funcs template.FuncMap) error {
 func (n NextjsEnv) SideEffects(result *BuiltPage) error { return nil }
 
 type extensionFile struct {
-	mutex     sync.Mutex
-	files     []string
-	urls      map[string]string
-	filetypes map[string]string
+	mutex        sync.Mutex
+	files        []string
+	urls         map[string]string
+	filetypes    map[string]string
+	mimeHints    map[string]string
+	mimeHitsLock sync.RWMutex
 }
 
 func newExtensionFile() *extensionFile {
@@ -61,6 +63,7 @@ func newExtensionFile() *extensionFile {
 		files:     []string{},
 		urls:      map[string]string{},
 		filetypes: filetypes,
+		mimeHints: map[string]string{},
 	}
 }
 
@@ -86,7 +89,7 @@ func (extension *extensionFile) Apply(funcs template.FuncMap) error {
 		return template.HTML(fmt.Sprintf(FiletypesTags[filetype], url, url)), nil
 	}
 
-	funcs["file_src"] = func(filename string) (template.URL, error) {
+	funcs["file_src"] = func(filename string, mimeType ...string) (template.URL, error) {
 		extension.mutex.Lock()
 		defer extension.mutex.Unlock()
 
@@ -95,7 +98,7 @@ func (extension *extensionFile) Apply(funcs template.FuncMap) error {
 			return "", err
 		}
 
-		url, cached := extension.url(filename)
+		url, cached := extension.url(filename, mimeType...)
 		if !cached {
 			extension.files = append(extension.files, filename)
 		}
@@ -127,7 +130,7 @@ func (extension *extensionFile) SideEffects(result *BuiltPage) error {
 		}
 		url, _ := extension.url(filename)
 		result.Subpattern[url] = &BuiltPage{
-			ContentType: http.DetectContentType(data),
+			ContentType: extension.getContentType(filename, data),
 			Data:        data,
 		}
 		extension.urls[filename] = url
@@ -136,11 +139,25 @@ func (extension *extensionFile) SideEffects(result *BuiltPage) error {
 	return nil
 }
 
-func (extension *extensionFile) url(filename string) (url string, cached bool) {
+func (extension *extensionFile) url(filename string, mimeType ...string) (url string, cached bool) {
 	if url, cached = extension.urls[filename]; cached {
 		return
 	}
+	if len(mimeType) > 0 {
+		extension.mimeHitsLock.Lock()
+		defer extension.mimeHitsLock.Unlock()
+		extension.mimeHints[filename] = strings.Join(mimeType, " ")
+	}
 	return fmt.Sprintf("/mono/cdn/file/%s%s", hashFile(filename), filepath.Ext(filename)), false
+}
+
+func (extension *extensionFile) getContentType(filename string, data []byte) string {
+	extension.mimeHitsLock.RLock()
+	defer extension.mimeHitsLock.RUnlock()
+	if mime, ok := extension.mimeHints[filename]; ok {
+		return mime
+	}
+	return http.DetectContentType(data)
 }
 
 func containsDynamicContent(data []byte) bool {
