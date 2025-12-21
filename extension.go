@@ -43,22 +43,6 @@ func (n NextjsEnv) Apply(funcs template.FuncMap) error {
 
 func (n NextjsEnv) SideEffects(result *BuiltPage) error { return nil }
 
-type extensionDynamicPages struct{}
-
-func (e extensionDynamicPages) Apply(funcs template.FuncMap) error { return nil }
-
-func (e extensionDynamicPages) SideEffects(result *BuiltPage) error {
-	if data := string(result.Data); strings.HasPrefix(http.DetectContentType(result.Data), "text/") && strings.Contains(data, "{${") && strings.Contains(data, "}$}") {
-		result.Dynamic = true
-	}
-	for _, sub := range result.Subpattern {
-		_ = e.SideEffects(sub)
-	}
-	return nil
-}
-
-var _ Extension = &extensionDynamicPages{}
-
 type extensionFile struct {
 	mutex     sync.Mutex
 	files     []string
@@ -157,4 +141,8 @@ func (extension *extensionFile) url(filename string) (url string, cached bool) {
 		return
 	}
 	return fmt.Sprintf("/mono/cdn/file/%s%s", hashFile(filename), filepath.Ext(filename)), false
+}
+
+func containsDynamicContent(data []byte) bool {
+	return strings.HasPrefix(http.DetectContentType(data), "text/") && strings.Contains(string(data), "{${") && strings.Contains(string(data), "}$}")
 }

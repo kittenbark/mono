@@ -110,7 +110,7 @@ var ConfigNextjsSpecialFiles = []nextjsContextSpecialFile{
 
 func Nextjs(root string, extensions ...Extension) Page {
 	page, err := func() (page Page, err error) {
-		extensions = append(extensions, newExtensionFile(), &extensionDynamicPages{})
+		extensions = append(extensions, newExtensionFile())
 
 		baseContext, err := newNextjsContext(root)
 		if err != nil {

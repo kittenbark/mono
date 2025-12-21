@@ -36,6 +36,11 @@ var (
 
 	DefaultPageDynamicFuncs = template.FuncMap{
 		"mono_time": func() string { return time.Now().String() },
+		"mono_tee":  func(values ...any) string { return fmt.Sprint(values...) },
+		"mono_log": func(values ...any) string {
+			fmt.Println(values...)
+			return ""
+		},
 	}
 )
 

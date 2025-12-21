@@ -123,30 +123,10 @@ func (server *serverDev) Page(pattern string, pageBuilder Page) Server {
 		return server
 	}
 
-	if page.DynamicFuncs != nil {
-		for fnName, fn := range DefaultPageDynamicFuncs {
-			if _, ok := page.DynamicFuncs[fnName]; !ok {
-				page.DynamicFuncs[fnName] = fn
-			}
-		}
-	} else {
-		page.DynamicFuncs = DefaultPageDynamicFuncs
-	}
-	if page.DynamicData == nil {
-		type DynamicData struct {
-			Context context.Context
-			Request *http.Request
-		}
-		page.DynamicData = func(ctx context.Context, req *http.Request) any {
-			return DynamicData{
-				Context: ctx,
-				Request: req,
-			}
-		}
-	}
+	serverPageUpdateBuiltPage(&page)
 
 	var dynTemplate *template.Template
-	if page.IsDynamic() {
+	if containsDynamicContent(page.Data) {
 		dynTemplate, err = Schema(string(page.Data), pattern, page.DynamicFuncs, "{${", "}$}")
 		if err != nil {
 			return server.WithBuildError(err)
@@ -155,34 +135,12 @@ func (server *serverDev) Page(pattern string, pageBuilder Page) Server {
 
 	// Note: this section might be CPU intensive, could be a good place for parallelization.
 	gzipStaticData := server.gzipIfPossible(page, gzip.BestCompression)
-	defer func() {
-		type_ := "static_page"
-		if dynTemplate != nil {
-			type_ = "dynamic_page"
-		}
-		size := fmt.Sprintf("[%s]", sizeof(page.Data))
-		if gzipStaticData != nil {
-			size = fmt.Sprintf(" [%s (%s)]", sizeof(gzipStaticData), sizeof(gzipStaticData))
-		}
-		// Note: this is a hack — server.Handler sets handlers[pattern]=dynamic, we override it as static.
-		server.handlersMap[pattern] = fmt.Sprintf("%s %s (%s)", type_, size, page.ContentType)
-	}()
+	defer server.updateStats(pattern, dynTemplate, page, gzipStaticData)
 
 	return server.Handler(pattern, func(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
-		h := rw.Header()
-		if page.ContentType != "" {
-			h.Set("Content-Type", page.ContentType)
-		}
-		if strings.HasPrefix(page.ContentType, "text/css") || strings.HasPrefix(page.ContentType, "image/") || strings.HasPrefix(page.ContentType, "video/") {
-			h.Set("Cache-Control", headerCacheControlWeek)
-			h.Set("Expires", time.Now().Add(time.Hour*24*7).Format(http.TimeFormat))
-		} else {
-			h.Set("Cache-Control", headerCacheControlDay)
-			h.Set("Expires", time.Now().Add(time.Hour*24).Format(http.TimeFormat))
-		}
+		headers := serverPageUpdate(rw, page)
 		data := page.Data
 
-		// TODO: support gzip here?
 		if dynTemplate != nil {
 			built, err := ExecuteSchema(dynTemplate, page.DynamicData(ctx, req))
 			if err != nil {
@@ -192,9 +150,9 @@ func (server *serverDev) Page(pattern string, pageBuilder Page) Server {
 		}
 
 		if strings.Contains(req.Header.Get("Accept-Encoding"), "gzip") {
-			if gzipStaticData != nil {
-				data = gzipStaticData
-				h.Set("Content-Encoding", "gzip")
+			data, err = gzipApplyCompression(data, gzipStaticData, headers, page)
+			if err != nil {
+				return err
 			}
 		}
 
@@ -203,6 +161,19 @@ func (server *serverDev) Page(pattern string, pageBuilder Page) Server {
 		}
 		return nil
 	})
+}
+
+func (server *serverDev) updateStats(pattern string, dynTemplate *template.Template, page BuiltPage, gzipStaticData []byte) {
+	type_ := "static_page"
+	if dynTemplate != nil {
+		type_ = "dynamic_page"
+	}
+	size := fmt.Sprintf("[%s]", sizeof(page.Data))
+	if gzipStaticData != nil {
+		size = fmt.Sprintf(" [%s (%s)]", sizeof(gzipStaticData), sizeof(gzipStaticData))
+	}
+	// Note: this is a hack — server.Handler sets handlers[pattern]=dynamic, we override it as static.
+	server.handlersMap[pattern] = fmt.Sprintf("%s %s (%s)", type_, size, page.ContentType)
 }
 
 func (server *serverDev) gzipIfPossible(page BuiltPage, compression int) (dataOpt []byte) {
@@ -415,4 +386,63 @@ func buildError(err error, depth ...int) error {
 		CallerFrom: callerFrom,
 		Err:        err,
 	}
+}
+
+func serverPageUpdateBuiltPage(page *BuiltPage) {
+	if page.DynamicFuncs != nil {
+		for fnName, fn := range DefaultPageDynamicFuncs {
+			if _, ok := page.DynamicFuncs[fnName]; !ok {
+				page.DynamicFuncs[fnName] = fn
+			}
+		}
+	} else {
+		page.DynamicFuncs = DefaultPageDynamicFuncs
+	}
+	if page.DynamicData == nil {
+		type DynamicData struct {
+			Context context.Context
+			Request *http.Request
+		}
+		page.DynamicData = func(ctx context.Context, req *http.Request) any {
+			return DynamicData{
+				Context: ctx,
+				Request: req,
+			}
+		}
+	}
+}
+
+func serverPageUpdate(rw http.ResponseWriter, page BuiltPage) http.Header {
+	h := rw.Header()
+	if page.ContentType != "" {
+		h.Set("Content-Type", page.ContentType)
+	}
+	if strings.HasPrefix(page.ContentType, "text/css") || strings.HasPrefix(page.ContentType, "image/") || strings.HasPrefix(page.ContentType, "video/") {
+		h.Set("Cache-Control", headerCacheControlWeek)
+		h.Set("Expires", time.Now().Add(time.Hour*24*7).Format(http.TimeFormat))
+	} else {
+		h.Set("Cache-Control", headerCacheControlDay)
+		h.Set("Expires", time.Now().Add(time.Hour*24).Format(http.TimeFormat))
+	}
+	return h
+}
+
+func gzipApplyCompression(data []byte, gzipStaticData []byte, headers http.Header, page BuiltPage) ([]byte, error) {
+	if gzipStaticData != nil && !page.IsDynamic() {
+		data = gzipStaticData
+		headers.Set("Content-Encoding", "gzip")
+	}
+	if page.IsDynamic() {
+		gzipped := bytes.NewBuffer(nil)
+		compressor, _ := gzip.NewWriterLevel(gzipped, gzip.BestSpeed)
+		if _, err := compressor.Write(data); err != nil {
+			return nil, err
+		}
+		if err := compressor.Flush(); err != nil {
+			return nil, err
+		}
+		data = gzipped.Bytes()
+		headers.Set("Content-Encoding", "gzip")
+	}
+	return data, nil
 }
